@@ -33,7 +33,7 @@ Demo mode always refreshes every 5 seconds. Two demo-only variables help preview
    # optional: export SCHWAB_TOKEN_PATH=/path/to/token.json  (default ./token.json)
    ```
 
-3. `python backend.py login` once. It prints a Schwab login URL; after you sign in, paste the redirected URL back. The token is written to `token.json` (git-ignored).
+3. `python backend.py login` once. It opens the Schwab login in your browser and listens on the callback URL. After you sign in and approve, the browser warns about a self-signed certificate on `127.0.0.1:8182`; click Advanced → Proceed and the token is captured. The token is written to `token.json` (git-ignored). On a machine without a browser, use `python backend.py login --manual` and paste the redirected URL back.
 4. `python backend.py`. With `SCHWAB_APP_KEY` set the server uses Schwab; without it, demo data. `SCREENER_MODE=schwab|demo` forces either.
 
 The refresh token expires 7 days after `login`. The login time comes from `creation_timestamp` in the token file, which schwab-py keeps when it refreshes the access token. Run `login` again when the banner appears.
@@ -66,7 +66,7 @@ Edit `universe.json`. Groups are labels shown next to each ticker; the screener 
 - `pct_from_close = (price - prev_close) / prev_close * 100`, where `prev_close` is the quote's `closePrice`, or the last completed daily bar if that is missing
 - `rvol = volume / avg_volume_20d`, with the average over the last 20 completed sessions (20D RVOL column).
 - `rvol_pace = volume / (avg_volume_20d * share of the 9:30–16:00 session elapsed)` (Paced RVOL column). Blank before the open; equal to `rvol` after the close.
-- Outside the regular session, Price is Schwab's `lastPrice`, which includes extended-hours trades.
+- Outside the regular session Schwab's `quote.lastPrice` stays at the 16:00 print, so Price uses `extended.lastPrice` when its trade is newer (shown in purple; hover for the regular close). `prev_close` stays the prior session's `closePrice`, so % Day after hours is the extended price against yesterday's close. The chart's daily bar keeps the regular-session close.
 - Fields whose inputs are missing or zero (for example open before 9:30) show `—` and are not counted.
 
 ## Tests

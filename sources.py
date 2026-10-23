@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
-from metrics import normalize_schwab_candles
+from metrics import normalize_schwab_candles, schwab_quote
 
 ET = ZoneInfo("America/New_York")
 HERE = Path(__file__).resolve().parent
@@ -61,8 +61,9 @@ class SchwabSource:
             response = self.client.get_quotes(batch)
             response.raise_for_status()
             for symbol, body in response.json().items():
-                if isinstance(body, dict) and isinstance(body.get("quote"), dict):
-                    quotes[symbol] = body["quote"]
+                quote = schwab_quote(body)
+                if quote is not None:
+                    quotes[symbol] = quote
         return quotes
 
     def get_daily_history(self, symbol: str, days: int) -> list[dict[str, Any]]:

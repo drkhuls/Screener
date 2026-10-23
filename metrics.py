@@ -40,6 +40,23 @@ def daily_stats(candles: Sequence[dict[str, Any]], today: date, window: int = 20
     }
 
 
+def schwab_quote(body: dict[str, Any]) -> dict[str, Any] | None:
+    """Flatten one get_quotes entry. Outside the session ``quote.lastPrice`` stays at the 16:00
+    print; the live pre/post-market trade is in ``extended``, so use it when it is newer."""
+    quote = body.get("quote") if isinstance(body, dict) else None
+    if not isinstance(quote, dict):
+        return None
+    out = dict(quote)
+    extended = body.get("extended") or {}
+    ext_price = _num(extended.get("lastPrice"))
+    if ext_price and (_num(extended.get("tradeTime")) or 0) > (_num(quote.get("tradeTime")) or 0):
+        regular = body.get("regular") or {}
+        out["regularLastPrice"] = _num(regular.get("regularMarketLastPrice")) or _num(quote.get("lastPrice"))
+        out["lastPrice"] = ext_price
+        out["extendedHours"] = True
+    return out
+
+
 def stock_row(
     symbol: str,
     quote: dict[str, Any] | None,
@@ -59,9 +76,12 @@ def stock_row(
     rvol_pace = None
     if volume is not None and avg_volume and session_fraction:
         rvol_pace = round(volume / (avg_volume * session_fraction), 2)
+    extended = bool(quote.get("extendedHours"))
     return {
         "symbol": symbol,
         "price": price,
+        "extended_hours": extended,
+        "regular_price": _num(quote.get("regularLastPrice")) if extended else price,
         "open": open_price,
         "prev_close": prev_close,
         "high": _num(quote.get("highPrice")),
@@ -132,15 +152,17 @@ def _line(times: list[str], values: list[float | None]) -> list[dict[str, Any]]:
 
 
 def merge_live_bar(candles: list[dict[str, Any]], row: dict[str, Any] | None, today: date) -> list[dict[str, Any]]:
-    """Replace or append today's bar from the live quote so the chart shows the session."""
-    if not row or row.get("price") is None or row.get("open") is None:
+    """Replace or append today's bar from the live quote so the chart shows the session.
+    The daily bar uses the regular-session price, not pre/post-market trades."""
+    price = row.get("regular_price", row.get("price")) if row else None
+    if price is None or row.get("open") is None:
         return candles
     bar = {
         "date": today,
         "open": row["open"],
-        "high": max(v for v in (row.get("high"), row["open"], row["price"]) if v is not None),
-        "low": min(v for v in (row.get("low"), row["open"], row["price"]) if v is not None),
-        "close": row["price"],
+        "high": max(v for v in (row.get("high"), row["open"], price) if v is not None),
+        "low": min(v for v in (row.get("low"), row["open"], price) if v is not None),
+        "close": price,
         "volume": row.get("volume") or 0,
     }
     kept = [c for c in candles if c["date"] < today]

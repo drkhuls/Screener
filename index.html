@@ -57,6 +57,7 @@
   .pos { color: var(--up); }
   .neg { color: var(--down); }
   .hot { color: #ffd666; font-weight: 600; }
+  td.ext { color: #b9b0ff; }
 
   /* Section C: chart */
   .chart-box { display: flex; flex-direction: column; min-height: 0; }
@@ -198,7 +199,7 @@ function renderTable() {
   $("rows").innerHTML = sortedStocks(stocks).map((s) => `
     <tr data-symbol="${s.symbol}" class="${s.symbol === state.selected ? "selected" : ""}">
       <td class="sym">${s.symbol}${s.group ? `<small>${s.group}</small>` : ""}</td>
-      <td>${fmtPrice(s.price)}</td>
+      <td${s.extended_hours ? ` class="ext" title="Extended-hours trade · regular close ${fmtPrice(s.regular_price)}"` : ""}>${fmtPrice(s.price)}</td>
       <td class="${signClass(s.pct_from_open)}">${fmtPct(s.pct_from_open)}</td>
       <td class="${signClass(s.pct_from_close)}">${fmtPct(s.pct_from_close)}</td>
       <td>${fmtVolume(s.volume)}</td>
@@ -362,10 +363,11 @@ function updateLiveBar() {
   const last = bars[bars.length - 1];
   if (last.time !== state.data.meta.session_date) return;
   const s = state.data.stocks.find((x) => x.symbol === $("chart-symbol").textContent);
-  if (!s || s.price == null || s.open == null) return;
+  const price = s ? s.regular_price ?? s.price : null;
+  if (price == null || s.open == null) return;
   const bar = {
-    time: last.time, open: s.open, close: s.price,
-    high: Math.max(s.high ?? s.price, s.open, s.price), low: Math.min(s.low ?? s.price, s.open, s.price),
+    time: last.time, open: s.open, close: price,
+    high: Math.max(s.high ?? price, s.open, price), low: Math.min(s.low ?? price, s.open, price),
   };
   bars[bars.length - 1] = bar;
   candleSeries.update(bar);

@@ -1,7 +1,7 @@
 """Breadth monitor + screener API (FastAPI, Charles Schwab Trader API via schwab-py).
 
     python backend.py            # serve on http://127.0.0.1:8000
-    python backend.py login      # one-time Schwab OAuth, writes the token file
+    python backend.py login      # Schwab OAuth in the browser, writes the token file (--manual: paste flow)
     SCREENER_MODE=demo python backend.py   # fake data, no credentials
 """
 
@@ -324,23 +324,29 @@ def candles(symbol: str = Query(..., min_length=1, max_length=12)) -> dict[str, 
         raise HTTPException(502, f"{symbol}: {exc}") from exc
 
 
-def login() -> None:
+def login(manual: bool = False) -> None:
+    """Browser flow by default (catches the redirect on the callback port); --manual for headless."""
     from schwab import auth
 
     path = str(token_path())
-    auth.client_from_manual_flow(
+    args = (
         os.environ["SCHWAB_APP_KEY"],
         os.environ["SCHWAB_APP_SECRET"],
         os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182"),
         path,
     )
-    print(f"Token written to {path}")
+    if manual:
+        auth.client_from_manual_flow(*args)
+    else:
+        auth.client_from_login_flow(*args, callback_timeout=1800.0, interactive=False)
+    status = token_status.token_status(token_status.read_login_time(Path(path)), datetime.now(ET))
+    print(f"Token written to {path}; refresh token expires {status['expires_at']}")
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if sys.argv[1:2] == ["login"]:
-        login()
+        login(manual="--manual" in sys.argv[2:])
     else:
         import uvicorn
 
