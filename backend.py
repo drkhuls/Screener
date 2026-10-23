@@ -149,8 +149,7 @@ class Screener:
             self.errors["schwab"] = f"Schwab client: {exc}"
             log.warning("Schwab client: %s", exc)
             return
-        if self.source is not None:
-            log.info("New Schwab login detected (%s); client reloaded", login_at.isoformat())
+        log.info("Schwab client loaded (login %s)", login_at.isoformat())
         self.source, self.source_login_at = source, login_at
         self.last_poll = None
         self.errors.pop("schwab", None)

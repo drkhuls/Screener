@@ -21,7 +21,7 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
-as_app() { runuser -u "${APP_USER}" -- "$@"; }
+as_app() { runuser -u "${APP_USER}" -- env PIP_NO_CACHE_DIR=1 "$@"; }
 
 echo "==> Packages"
 export DEBIAN_FRONTEND=noninteractive
