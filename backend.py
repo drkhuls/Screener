@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import date, datetime, time as dtime
+from datetime import date, datetime, time as dtime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +23,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 import metrics
+import token_status
 from market_calendar import holiday_set
-from sources import ET, HERE, make_source
+from sources import ET, HERE, make_source, token_path
 
 log = logging.getLogger("screener")
 
@@ -69,6 +70,22 @@ def market_open(now: datetime) -> bool:
     return is_trading_day(now.date()) and SESSION_OPEN <= now.time() < SESSION_CLOSE
 
 
+def market_session(now: datetime) -> str:
+    """regular, pre, post, or closed (weekends and holidays)."""
+    if not is_trading_day(now.date()):
+        return "closed"
+    if now.time() < SESSION_OPEN:
+        return "pre"
+    return "regular" if now.time() < SESSION_CLOSE else "post"
+
+
+def poll_interval(config: dict[str, Any], now: datetime, mode: str) -> float:
+    """Fast polling in the regular session; slower outside it so extended-hours prices still update."""
+    if mode == "demo" or market_session(now) == "regular":
+        return config["poll_seconds"]
+    return config["off_hours_poll_seconds"]
+
+
 def session_fraction(now: datetime) -> float | None:
     """Share of the regular session elapsed, for the time-of-day-paced RVOL."""
     if not is_trading_day(now.date()) or now.time() < SESSION_OPEN:
@@ -90,8 +107,14 @@ class Screener:
         self.stats_loaded_at: datetime | None = None
         self.quotes: dict[str, dict[str, Any]] = {}
         self.quotes_at: datetime | None = None
+        self.last_poll: float | None = None
         self.errors: dict[str, str] = {}
         self.chart_cache: dict[str, tuple[date, list[dict[str, Any]]]] = {}
+        self.token_logged: tuple[str, float] = ("", 0.0)
+        self.demo_login_at: datetime | None = None
+        demo_age = os.environ.get("SCREENER_DEMO_TOKEN_AGE_HOURS")
+        if mode == "demo" and demo_age:
+            self.demo_login_at = datetime.now(ET) - timedelta(hours=float(demo_age))
         self.stop = threading.Event()
         self.reload_universe()
 
@@ -136,22 +159,46 @@ class Screener:
                     self.load_stats(missing)
             self.stop.wait(15)
 
+    def token(self) -> dict[str, Any] | None:
+        """Refresh-token expiry; None in demo mode unless SCREENER_DEMO_TOKEN_AGE_HOURS is set."""
+        if self.mode == "demo" and self.demo_login_at is None:
+            return None
+        login_at = self.demo_login_at if self.mode == "demo" else token_status.read_login_time(token_path())
+        return token_status.token_status(
+            login_at,
+            datetime.now(ET),
+            self.config.get("token_lifetime_days", 7),
+            self.config.get("token_warn_days", 2),
+            self.config.get("token_urgent_days", 1),
+        )
+
+    def check_token(self) -> None:
+        """Log a warning when the level changes, then hourly while it is not ok."""
+        status = self.token()
+        if status is None or status["level"] == "ok":
+            self.token_logged = (status["level"] if status else "", 0.0)
+            return
+        level, logged_at = self.token_logged
+        if level != status["level"] or time.monotonic() - logged_at >= 3600:
+            log.warning(token_status.describe(status))
+            self.token_logged = (status["level"], time.monotonic())
+
     def quote_loop(self) -> None:
+        tick = self.config["poll_seconds"]
         while not self.stop.is_set():
             now = datetime.now(ET)
             try:
                 self.reload_universe()
             except Exception as exc:
                 self.errors["universe"] = f"universe.json: {exc}"
-            live = market_open(now) or self.mode == "demo"
-            stale = self.quotes_at is None or (
-                (now - self.quotes_at).total_seconds() >= self.config["off_hours_poll_seconds"]
-            )
-            if live or stale:
+            self.check_token()
+            interval = poll_interval(self.config, now, self.mode)
+            if self.last_poll is None or time.monotonic() - self.last_poll >= interval - tick / 2:
                 self.poll_quotes()
-            self.stop.wait(self.config["poll_seconds"])
+            self.stop.wait(tick)
 
     def poll_quotes(self) -> None:
+        self.last_poll = time.monotonic()
         try:
             quotes = self.source.get_quotes(list(self.universe))
         except Exception as exc:
@@ -163,8 +210,17 @@ class Screener:
             self.quotes_at = datetime.now(ET)
             self.errors.pop("quotes", None)
 
+    def clock(self) -> datetime:
+        """Wall clock in ET; in demo mode SCREENER_DEMO_TIME=HH:MM pins the time of day."""
+        now = datetime.now(ET)
+        pinned = os.environ.get("SCREENER_DEMO_TIME") if self.mode == "demo" else None
+        if pinned:
+            hour, minute = map(int, pinned.split(":"))
+            now = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        return now
+
     def rows(self) -> list[dict[str, Any]]:
-        fraction = session_fraction(datetime.now(ET))
+        fraction = session_fraction(self.clock())
         with self.lock:
             out = []
             for symbol in self.universe:
@@ -183,13 +239,15 @@ class Screener:
             self.config["topd_min_pct_from_open"],
             self.config["topd_min_rvol"],
         )
-        now = datetime.now(ET)
+        now = self.clock()
         return {
             "summary": summary,
             "stocks": rows,
             "meta": {
                 "mode": self.mode,
                 "market_open": market_open(now),
+                "session": market_session(now),
+                "poll_seconds": poll_interval(self.config, now, self.mode),
                 "session_date": now.date().isoformat(),
                 "quotes_at": self.quotes_at.isoformat() if self.quotes_at else None,
                 "stats_loaded_at": self.stats_loaded_at.isoformat() if self.stats_loaded_at else None,
@@ -197,6 +255,8 @@ class Screener:
                     "topd_min_pct_from_open": self.config["topd_min_pct_from_open"],
                     "topd_min_rvol": self.config["topd_min_rvol"],
                 },
+                "breadth_excluded_groups": sorted(excluded),
+                "token": self.token(),
                 "errors": dict(self.errors),
             },
         }
@@ -267,14 +327,14 @@ def candles(symbol: str = Query(..., min_length=1, max_length=12)) -> dict[str, 
 def login() -> None:
     from schwab import auth
 
-    token_path = os.environ.get("SCHWAB_TOKEN_PATH", str(HERE / "token.json"))
+    path = str(token_path())
     auth.client_from_manual_flow(
         os.environ["SCHWAB_APP_KEY"],
         os.environ["SCHWAB_APP_SECRET"],
         os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182"),
-        token_path,
+        path,
     )
-    print(f"Token written to {token_path}")
+    print(f"Token written to {path}")
 
 
 if __name__ == "__main__":

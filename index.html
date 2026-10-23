@@ -18,8 +18,17 @@
   .badge.demo { background: #5a4500; color: #ffd666; }
   .badge.open { background: #0f3d36; color: #5fd3c3; }
   #status { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .badge.ext { background: #2d2a4a; color: #b9b0ff; }
+  .badge.token-ok { background: #1e2b1e; color: #8fcf8f; }
+  .badge.token-warning { background: #5a4500; color: #ffd666; }
+  .badge.token-urgent, .badge.token-expired, .badge.token-missing { background: #6b1414; color: #ffd0d0; }
   #errors { color: #ff9b8f; font-size: 12px; padding: 0 14px; }
-  main { display: grid; grid-template-columns: minmax(420px, 520px) 1fr; gap: 12px; padding: 12px 14px; height: calc(100vh - 42px); }
+  #token-banner { display: none; padding: 7px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  #token-banner.warning { display: block; background: #3d3000; color: #ffd666; }
+  #token-banner.urgent, #token-banner.expired, #token-banner.missing { display: block; background: #5c1010; color: #fff; font-weight: 600; }
+  #token-banner code { background: rgba(0,0,0,.35); padding: 1px 5px; border-radius: 3px; }
+  body { display: flex; flex-direction: column; height: 100vh; }
+  main { display: grid; grid-template-columns: minmax(560px, 680px) 1fr; gap: 12px; padding: 12px 14px; flex: 1; min-height: 0; }
   .left { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
   .box { background: var(--panel); border: 1px solid var(--line); }
 
@@ -61,6 +70,7 @@
   #chart-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; z-index: 2; }
 
   @media (max-width: 980px) {
+    body { height: auto; }
     main { grid-template-columns: 1fr; height: auto; }
     .table-wrap { max-height: 60vh; }
     #chart { height: 520px; }
@@ -72,8 +82,10 @@
   <h1>Screener</h1>
   <span id="mode" class="badge"></span>
   <span id="market" class="badge"></span>
+  <span id="token" class="badge" style="display:none"></span>
   <span id="status">Loading…</span>
 </header>
+<div id="token-banner"></div>
 <div id="errors"></div>
 <main>
   <div class="left">
@@ -119,7 +131,9 @@ const COLUMNS = [
   { key: "pct_from_close", label: "% Day" },
   { key: "volume", label: "Volume" },
   { key: "rvol", label: "20D RVOL" },
+  { key: "rvol_pace", label: "Paced RVOL", title: "volume / (20-day avg volume × share of session elapsed)" },
 ];
+const SESSION_LABELS = { regular: "Market open", pre: "Pre-market", post: "After hours", closed: "Market closed" };
 const THEMES = {
   light: { background: "#ffffff", text: "#333333", grid: "#eeeeee", border: "#d6d6d6" },
   dark: { background: "#121212", text: "#cccccc", grid: "#1f1f1f", border: "#333333" },
@@ -143,6 +157,7 @@ function fmtVolume(v) {
   return String(v);
 }
 const fmtPrice = (v) => (v == null ? "—" : v.toFixed(2));
+const fmtRatio = (v) => (v == null ? "—" : v.toFixed(2));
 const fmtPct = (v) => (v == null ? "—" : (v > 0 ? "+" : "") + v.toFixed(2) + "%");
 const signClass = (v) => (v == null || v === 0 ? "" : v > 0 ? "pos" : "neg");
 
@@ -161,7 +176,7 @@ function renderScans(summary) {
 function renderHead() {
   $("head").innerHTML = COLUMNS.map((c) => {
     const arrow = state.sort.key === c.key ? (state.sort.dir === "desc" ? "▼" : "▲") : "";
-    return `<th data-key="${c.key}">${c.label}<span class="arrow">${arrow}</span></th>`;
+    return `<th data-key="${c.key}"${c.title ? ` title="${c.title}"` : ""}>${c.label}<span class="arrow">${arrow}</span></th>`;
   }).join("");
 }
 
@@ -187,17 +202,51 @@ function renderTable() {
       <td class="${signClass(s.pct_from_open)}">${fmtPct(s.pct_from_open)}</td>
       <td class="${signClass(s.pct_from_close)}">${fmtPct(s.pct_from_close)}</td>
       <td>${fmtVolume(s.volume)}</td>
-      <td class="${s.rvol != null && s.rvol >= hotRvol ? "hot" : ""}"
-          title="${s.rvol_pace != null ? "Time-of-day paced RVOL: " + s.rvol_pace.toFixed(2) : ""}">${s.rvol == null ? "—" : s.rvol.toFixed(2)}</td>
+      <td class="${s.rvol != null && s.rvol >= hotRvol ? "hot" : ""}">${fmtRatio(s.rvol)}</td>
+      <td class="${s.rvol_pace != null && s.rvol_pace >= hotRvol ? "hot" : ""}">${fmtRatio(s.rvol_pace)}</td>
     </tr>`).join("");
+}
+
+function fmtLeft(seconds) {
+  const d = Math.floor(seconds / 86400), h = Math.floor((seconds % 86400) / 3600), m = Math.floor((seconds % 3600) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+
+function renderToken(token) {
+  const badge = $("token"), banner = $("token-banner");
+  if (!token) { badge.style.display = "none"; banner.className = ""; return; }
+  const left = token.seconds_left;
+  const expires = token.expires_at ? new Date(token.expires_at).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  const relogin = "Run <code>python backend.py login</code> to renew.";
+  badge.style.display = "";
+  badge.className = "badge token-" + token.level;
+  badge.title = token.expires_at ? "Schwab refresh token expires " + expires : "";
+  badge.textContent = {
+    ok: `Token ${fmtLeft(left)}`,
+    warning: `Token expires in ${fmtLeft(left)}`,
+    urgent: `Token expires in ${fmtLeft(left)}`,
+    expired: "Token expired",
+    missing: "No token",
+  }[token.level];
+  banner.className = token.level === "ok" ? "" : token.level;
+  banner.innerHTML = {
+    ok: "",
+    warning: `Schwab login expires in ${fmtLeft(left)} (${expires}). ${relogin}`,
+    urgent: `⚠ Schwab login expires in ${fmtLeft(left)} (${expires}) — quotes will stop. ${relogin}`,
+    expired: `⚠ Schwab login expired ${expires}. Quotes have stopped. ${relogin}`,
+    missing: `⚠ No Schwab token found. ${relogin}`,
+  }[token.level];
 }
 
 function renderStatus() {
   const { meta } = state.data;
   $("mode").textContent = meta.mode === "demo" ? "DEMO DATA" : "SCHWAB";
   $("mode").className = "badge" + (meta.mode === "demo" ? " demo" : "");
-  $("market").textContent = meta.market_open ? "Market open" : "Market closed";
-  $("market").className = "badge" + (meta.market_open ? " open" : "");
+  const session = meta.session || (meta.market_open ? "regular" : "closed");
+  const every = meta.poll_seconds >= 60 ? `every ${Math.round(meta.poll_seconds / 60)} min` : `every ${meta.poll_seconds}s`;
+  $("market").textContent = `${SESSION_LABELS[session]} · ${every}`;
+  $("market").className = "badge" + (session === "regular" ? " open" : session === "closed" ? "" : " ext");
+  renderToken(meta.token);
   const at = meta.quotes_at ? new Date(meta.quotes_at).toLocaleTimeString() : "—";
   $("status").textContent = `Quotes ${at} · topd: ≥${meta.thresholds.topd_min_pct_from_open}% from open & RVOL ≥${meta.thresholds.topd_min_rvol}`;
   const errors = Object.values(meta.errors || {});

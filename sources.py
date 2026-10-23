@@ -18,6 +18,10 @@ ET = ZoneInfo("America/New_York")
 HERE = Path(__file__).resolve().parent
 
 
+def token_path() -> Path:
+    return Path(os.environ.get("SCHWAB_TOKEN_PATH", HERE / "token.json"))
+
+
 def chunks(items: list[str], size: int) -> Iterable[list[str]]:
     for start in range(0, len(items), max(1, size)):
         yield items[start : start + size]
@@ -31,11 +35,11 @@ class SchwabSource:
     def __init__(self, chunk_size: int = 100, history_per_minute: int = 100):
         from schwab import auth
 
-        token_path = Path(os.environ.get("SCHWAB_TOKEN_PATH", HERE / "token.json"))
-        if not token_path.exists():
-            raise RuntimeError(f"No Schwab token at {token_path}. Run: python backend.py login")
+        path = token_path()
+        if not path.exists():
+            raise RuntimeError(f"No Schwab token at {path}. Run: python backend.py login")
         self.client = auth.client_from_token_file(
-            str(token_path),
+            str(path),
             os.environ["SCHWAB_APP_KEY"],
             os.environ["SCHWAB_APP_SECRET"],
         )
