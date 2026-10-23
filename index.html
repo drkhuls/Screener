@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screener</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root {
+    --bg: #121212; --panel: #1b1b1b; --line: #2c2c2c; --text: #d8d8d8; --muted: #8a8a8a;
+    --up: #26a69a; --down: #ef5350; --sel: #26324a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.35 "Segoe UI", Roboto, Arial, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .badge { padding: 1px 7px; border-radius: 3px; font-size: 11px; background: #333; color: #ccc; }
+  .badge.demo { background: #5a4500; color: #ffd666; }
+  .badge.open { background: #0f3d36; color: #5fd3c3; }
+  #status { color: var(--muted); font-size: 12px; margin-left: auto; }
+  #errors { color: #ff9b8f; font-size: 12px; padding: 0 14px; }
+  main { display: grid; grid-template-columns: minmax(420px, 520px) 1fr; gap: 12px; padding: 12px 14px; height: calc(100vh - 42px); }
+  .left { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .box { background: var(--panel); border: 1px solid var(--line); }
+
+  /* Section A: Top Scans (thinkorswim style) */
+  .scans-head { padding: 5px 8px; font-weight: 600; border-bottom: 1px solid var(--line); background: #202020; }
+  .scan { display: grid; grid-template-columns: 1fr 120px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #000; }
+  .scan.total { background: #3a3a3a; }
+  .scan .num { text-align: center; font-variant-numeric: tabular-nums; }
+  .bar { height: 7px; background: #0b0b0b; border: 1px solid #555; margin-top: 2px; }
+  .bar > i { display: block; height: 100%; background: #9a9a9a; width: 0; transition: width .4s; }
+  .scan.total .bar > i { background: #c8c8c8; }
+
+  /* Section B: table */
+  .table-wrap { overflow: auto; min-height: 0; flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 5px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid #222; }
+  th:first-child, td:first-child { text-align: left; }
+  th { position: sticky; top: 0; background: #202020; color: #bbb; font-weight: 600; cursor: pointer; user-select: none; }
+  th:hover { color: #fff; }
+  th .arrow { color: var(--muted); font-size: 10px; margin-left: 3px; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #1f1f1f; }
+  tbody tr.selected { background: var(--sel); }
+  td.sym { font-weight: 600; }
+  td.sym small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .pos { color: var(--up); }
+  .neg { color: var(--down); }
+  .hot { color: #ffd666; font-weight: 600; }
+
+  /* Section C: chart */
+  .chart-box { display: flex; flex-direction: column; min-height: 0; }
+  .chart-head { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  .chart-head b { font-size: 14px; }
+  .legend { display: flex; gap: 10px; font-size: 12px; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 2px; margin-right: 4px; vertical-align: middle; background: currentColor; }
+  #ohlc { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  button { margin-left: auto; background: #2a2a2a; color: var(--text); border: 1px solid #444; padding: 3px 10px; border-radius: 3px; cursor: pointer; }
+  #chart { flex: 1; min-height: 360px; position: relative; }
+  #chart-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; z-index: 2; }
+
+  @media (max-width: 980px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    .table-wrap { max-height: 60vh; }
+    #chart { height: 520px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Screener</h1>
+  <span id="mode" class="badge"></span>
+  <span id="market" class="badge"></span>
+  <span id="status">Loading…</span>
+</header>
+<div id="errors"></div>
+<main>
+  <div class="left">
+    <section class="box" id="scans">
+      <div class="scans-head">Top Scans ▾</div>
+      <div id="scan-rows"></div>
+    </section>
+    <section class="box table-wrap">
+      <table>
+        <thead><tr id="head"></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </div>
+  <section class="box chart-box">
+    <div class="chart-head">
+      <b id="chart-symbol">—</b>
+      <div class="legend">
+        <span style="color:#ef5350">10 EMA</span>
+        <span style="color:#2962ff">20 EMA</span>
+        <span style="color:#2e9d4f">50 SMA</span>
+        <span style="color:#9e9e9e">200 SMA</span>
+      </div>
+      <span id="ohlc"></span>
+      <button id="theme">Dark chart</button>
+    </div>
+    <div id="chart"><div id="chart-msg">Click a row to chart it</div></div>
+  </section>
+</main>
+<script>
+const POLL_MS = 5000;
+const SCANS = [
+  ["universe_count", "my universe", true],
+  ["gapped_up", "gapped-up"],
+  ["positive_since_close", "+ve since last close"],
+  ["moved_up_since_open", "moved up since open"],
+  ["topd_moved_up_since_open", "topd moved up since open"],
+];
+const COLUMNS = [
+  { key: "symbol", label: "Ticker" },
+  { key: "price", label: "Price" },
+  { key: "pct_from_open", label: "% From Open" },
+  { key: "pct_from_close", label: "% Day" },
+  { key: "volume", label: "Volume" },
+  { key: "rvol", label: "20D RVOL" },
+];
+const THEMES = {
+  light: { background: "#ffffff", text: "#333333", grid: "#eeeeee", border: "#d6d6d6" },
+  dark: { background: "#121212", text: "#cccccc", grid: "#1f1f1f", border: "#333333" },
+};
+
+const state = {
+  sort: JSON.parse(localStorage.getItem("screener.sort") || "null") || { key: "pct_from_close", dir: "desc" },
+  selected: localStorage.getItem("screener.symbol"),
+  theme: localStorage.getItem("screener.theme") || "light",
+  data: null,
+  chartBars: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function fmtVolume(v) {
+  if (v == null) return "—";
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return Math.round(v / 1e3) + "K";
+  return String(v);
+}
+const fmtPrice = (v) => (v == null ? "—" : v.toFixed(2));
+const fmtPct = (v) => (v == null ? "—" : (v > 0 ? "+" : "") + v.toFixed(2) + "%");
+const signClass = (v) => (v == null || v === 0 ? "" : v > 0 ? "pos" : "neg");
+
+function renderScans(summary) {
+  const total = summary.universe_count || 0;
+  $("scan-rows").innerHTML = SCANS.map(([key, label, isTotal]) => {
+    const count = summary[key] ?? 0;
+    const width = total ? (count / total) * 100 : 0;
+    return `<div class="scan${isTotal ? " total" : ""}">
+      <span>${label}</span>
+      <div><div class="num">${count}</div><div class="bar"><i style="width:${width}%"></i></div></div>
+    </div>`;
+  }).join("");
+}
+
+function renderHead() {
+  $("head").innerHTML = COLUMNS.map((c) => {
+    const arrow = state.sort.key === c.key ? (state.sort.dir === "desc" ? "▼" : "▲") : "";
+    return `<th data-key="${c.key}">${c.label}<span class="arrow">${arrow}</span></th>`;
+  }).join("");
+}
+
+function sortedStocks(stocks) {
+  const { key, dir } = state.sort;
+  const mult = dir === "desc" ? -1 : 1;
+  return [...stocks].sort((a, b) => {
+    const x = a[key], y = b[key];
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * mult;
+  });
+}
+
+function renderTable() {
+  const { stocks, meta } = state.data;
+  const hotRvol = meta.thresholds.topd_min_rvol;
+  $("rows").innerHTML = sortedStocks(stocks).map((s) => `
+    <tr data-symbol="${s.symbol}" class="${s.symbol === state.selected ? "selected" : ""}">
+      <td class="sym">${s.symbol}${s.group ? `<small>${s.group}</small>` : ""}</td>
+      <td>${fmtPrice(s.price)}</td>
+      <td class="${signClass(s.pct_from_open)}">${fmtPct(s.pct_from_open)}</td>
+      <td class="${signClass(s.pct_from_close)}">${fmtPct(s.pct_from_close)}</td>
+      <td>${fmtVolume(s.volume)}</td>
+      <td class="${s.rvol != null && s.rvol >= hotRvol ? "hot" : ""}"
+          title="${s.rvol_pace != null ? "Time-of-day paced RVOL: " + s.rvol_pace.toFixed(2) : ""}">${s.rvol == null ? "—" : s.rvol.toFixed(2)}</td>
+    </tr>`).join("");
+}
+
+function renderStatus() {
+  const { meta } = state.data;
+  $("mode").textContent = meta.mode === "demo" ? "DEMO DATA" : "SCHWAB";
+  $("mode").className = "badge" + (meta.mode === "demo" ? " demo" : "");
+  $("market").textContent = meta.market_open ? "Market open" : "Market closed";
+  $("market").className = "badge" + (meta.market_open ? " open" : "");
+  const at = meta.quotes_at ? new Date(meta.quotes_at).toLocaleTimeString() : "—";
+  $("status").textContent = `Quotes ${at} · topd: ≥${meta.thresholds.topd_min_pct_from_open}% from open & RVOL ≥${meta.thresholds.topd_min_rvol}`;
+  const errors = Object.values(meta.errors || {});
+  $("errors").textContent = errors.length ? errors.slice(0, 3).join(" · ") + (errors.length > 3 ? ` (+${errors.length - 3} more)` : "") : "";
+}
+
+async function poll() {
+  try {
+    const res = await fetch("/api/screener-data", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    state.data = await res.json();
+    renderScans(state.data.summary);
+    renderHead();
+    renderTable();
+    renderStatus();
+    updateLiveBar();
+    if (!state.selected && state.data.stocks.length) {
+      state.selected = sortedStocks(state.data.stocks)[0].symbol;
+      renderTable();
+      loadChart(state.selected);
+    }
+  } catch (err) {
+    $("status").textContent = "Backend unreachable — retrying";
+  } finally {
+    setTimeout(poll, POLL_MS);
+  }
+}
+
+$("head").addEventListener("click", (e) => {
+  const th = e.target.closest("th");
+  if (!th) return;
+  const key = th.dataset.key;
+  state.sort = state.sort.key === key
+    ? { key, dir: state.sort.dir === "desc" ? "asc" : "desc" }
+    : { key, dir: "desc" };
+  localStorage.setItem("screener.sort", JSON.stringify(state.sort));
+  renderHead();
+  if (state.data) renderTable();
+});
+
+$("rows").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  state.selected = tr.dataset.symbol;
+  localStorage.setItem("screener.symbol", state.selected);
+  renderTable();
+  loadChart(state.selected);
+});
+
+/* Section C: chart */
+const chart = LightweightCharts.createChart($("chart"), {
+  autoSize: true,
+  rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.26 } },
+  timeScale: { rightOffset: 8 },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+});
+const candleSeries = chart.addCandlestickSeries({
+  upColor: "#26a69a", downColor: "#ef5350", borderUpColor: "#26a69a", borderDownColor: "#ef5350",
+  wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+});
+const volumeSeries = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
+chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+const lineOpts = (color) => ({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+const maSeries = {
+  ema10: chart.addLineSeries(lineOpts("#ef5350")),
+  ema20: chart.addLineSeries(lineOpts("#2962ff")),
+  sma50: chart.addLineSeries(lineOpts("#2e9d4f")),
+  sma200: chart.addLineSeries(lineOpts("#9e9e9e")),
+};
+
+function applyTheme() {
+  const t = THEMES[state.theme];
+  chart.applyOptions({
+    layout: { background: { type: "solid", color: t.background }, textColor: t.text },
+    grid: { vertLines: { color: t.grid }, horzLines: { color: t.grid } },
+    rightPriceScale: { borderColor: t.border },
+    timeScale: { borderColor: t.border },
+  });
+  $("theme").textContent = state.theme === "light" ? "Dark chart" : "Light chart";
+}
+$("theme").addEventListener("click", () => {
+  state.theme = state.theme === "light" ? "dark" : "light";
+  localStorage.setItem("screener.theme", state.theme);
+  applyTheme();
+});
+applyTheme();
+
+let chartRequest = 0;
+async function loadChart(symbol) {
+  const request = ++chartRequest;
+  $("chart-symbol").textContent = symbol;
+  $("chart-msg").textContent = "Loading " + symbol + "…";
+  try {
+    const res = await fetch("/api/candles?symbol=" + encodeURIComponent(symbol));
+    if (!res.ok) throw new Error((await res.json()).detail || res.status);
+    const data = await res.json();
+    if (request !== chartRequest) return;
+    candleSeries.setData(data.candles);
+    volumeSeries.setData(data.volume);
+    for (const [key, series] of Object.entries(maSeries)) series.setData(data[key]);
+    state.chartBars = data.candles;
+    const n = data.candles.length;
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 130), to: n + 8 });
+    $("chart-msg").textContent = "";
+  } catch (err) {
+    if (request === chartRequest) $("chart-msg").textContent = `Chart unavailable: ${err.message}`;
+  }
+}
+
+function updateLiveBar() {
+  const bars = state.chartBars;
+  if (!bars || !bars.length || !state.data) return;
+  const last = bars[bars.length - 1];
+  if (last.time !== state.data.meta.session_date) return;
+  const s = state.data.stocks.find((x) => x.symbol === $("chart-symbol").textContent);
+  if (!s || s.price == null || s.open == null) return;
+  const bar = {
+    time: last.time, open: s.open, close: s.price,
+    high: Math.max(s.high ?? s.price, s.open, s.price), low: Math.min(s.low ?? s.price, s.open, s.price),
+  };
+  bars[bars.length - 1] = bar;
+  candleSeries.update(bar);
+  volumeSeries.update({ time: bar.time, value: s.volume || 0, color: (bar.close >= bar.open ? "#26a69a" : "#ef5350") + "80" });
+}
+
+chart.subscribeCrosshairMove((param) => {
+  const bar = param.seriesData && param.seriesData.get(candleSeries);
+  $("ohlc").textContent = bar ? `O ${bar.open.toFixed(2)}  H ${bar.high.toFixed(2)}  L ${bar.low.toFixed(2)}  C ${bar.close.toFixed(2)}` : "";
+});
+
+if (state.selected) loadChart(state.selected);
+poll();
+</script>
+</body>
+</html>

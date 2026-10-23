@@ -1,0 +1,9 @@
+{
+  "groups": {
+    "Indexes": ["DIA", "IWM", "IWO", "QQQ", "SPY"],
+    "Liquid Leaders": ["AAPL", "GOOGL", "META", "MSFT", "NFLX", "NVDA", "AMZN"],
+    "Focus": ["DELL", "LITE", "AMD", "NBIS"],
+    "2nd Focus": ["MU", "SNDK", "TSLA", "CRWD", "ALAB", "ARM", "INTC", "PANW"]
+  },
+  "tickers": []
+}
