@@ -3,4 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 token.json
+.env
+.env.*
+!.env.example
 .DS_Store

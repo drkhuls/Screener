@@ -1,16 +1,21 @@
 """Breadth monitor + screener API (FastAPI, Charles Schwab Trader API via schwab-py).
 
-    python backend.py            # serve on http://127.0.0.1:8000
+    python backend.py            # serve on http://0.0.0.0:8000 (HOST / PORT override)
     python backend.py login      # Schwab OAuth in the browser, writes the token file (--manual: paste flow)
     SCREENER_MODE=demo python backend.py   # fake data, no credentials
+
+Settings and secrets come from the environment, or from a .env file next to this script.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 import os
 import re
+import secrets
 import sys
 import threading
 import time
@@ -19,13 +24,16 @@ from datetime import date, datetime, time as dtime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, Response
 
 import metrics
 import token_status
 from market_calendar import holiday_set
 from sources import ET, HERE, make_source, token_path
+
+load_dotenv(HERE / ".env")
 
 log = logging.getLogger("screener")
 
@@ -98,7 +106,8 @@ class Screener:
     def __init__(self, config: dict[str, Any], mode: str):
         self.config = config
         self.mode = mode
-        self.source = make_source(mode, config["quote_chunk_size"], config["history_requests_per_minute"])
+        self.source = None
+        self.source_login_at: datetime | None = None
         self.lock = threading.Lock()
         self.universe: list[str] = []
         self.groups: dict[str, str] = {}
@@ -116,7 +125,36 @@ class Screener:
         if mode == "demo" and demo_age:
             self.demo_login_at = datetime.now(ET) - timedelta(hours=float(demo_age))
         self.stop = threading.Event()
+        self.ensure_source()
         self.reload_universe()
+
+    def ensure_source(self) -> None:
+        """Create the data source; in Schwab mode, (re)create it when a token appears or a new
+        login replaces it, so the server can start before the first login and needs no restart
+        after the weekly re-login."""
+        if self.mode == "demo":
+            if self.source is None:
+                self.source = make_source("demo", 0, 0)
+            return
+        login_at = token_status.read_login_time(token_path())
+        if login_at is None:
+            if self.source is None:
+                self.errors["schwab"] = f"No Schwab token at {token_path()}. Run: python backend.py login"
+            return
+        if self.source is not None and login_at == self.source_login_at:
+            return
+        try:
+            source = make_source("schwab", self.config["quote_chunk_size"], self.config["history_requests_per_minute"])
+        except Exception as exc:
+            self.errors["schwab"] = f"Schwab client: {exc}"
+            log.warning("Schwab client: %s", exc)
+            return
+        if self.source is not None:
+            log.info("New Schwab login detected (%s); client reloaded", login_at.isoformat())
+        self.source, self.source_login_at = source, login_at
+        self.last_poll = None
+        self.errors.pop("schwab", None)
+        self.errors.pop("quotes", None)
 
     def reload_universe(self) -> bool:
         mtime = UNIVERSE_PATH.stat().st_mtime
@@ -146,6 +184,9 @@ class Screener:
         """Daily init at the configured ET time; also on startup and when new tickers appear."""
         hour, minute = map(int, self.config["history_init_time_et"].split(":"))
         while not self.stop.is_set():
+            if self.source is None:
+                self.stop.wait(15)
+                continue
             now = datetime.now(ET)
             init_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
             due = self.stats_loaded_at is None or (now >= init_at > self.stats_loaded_at)
@@ -191,6 +232,7 @@ class Screener:
                 self.reload_universe()
             except Exception as exc:
                 self.errors["universe"] = f"universe.json: {exc}"
+            self.ensure_source()
             self.check_token()
             interval = poll_interval(self.config, now, self.mode)
             if self.last_poll is None or time.monotonic() - self.last_poll >= interval - tick / 2:
@@ -198,6 +240,8 @@ class Screener:
             self.stop.wait(tick)
 
     def poll_quotes(self) -> None:
+        if self.source is None:
+            return
         self.last_poll = time.monotonic()
         try:
             quotes = self.source.get_quotes(list(self.universe))
@@ -267,6 +311,8 @@ class Screener:
         if cached and cached[0] == today:
             history = cached[1]
         else:
+            if self.source is None:
+                raise RuntimeError(self.errors.get("schwab", "No data source"))
             history = self.source.get_daily_history(symbol, self.config["chart_history_days"])
             self.chart_cache[symbol] = (today, history)
         live = next((r for r in self.rows() if r["symbol"] == symbol), None)
@@ -301,6 +347,27 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Screener", lifespan=lifespan)
+
+
+def basic_auth_ok(header: str | None, user: str, password: str) -> bool:
+    if not header or not header.lower().startswith("basic "):
+        return False
+    try:
+        given_user, _, given_password = base64.b64decode(header[6:]).decode().partition(":")
+    except (binascii.Error, UnicodeDecodeError):
+        return False
+    user_ok = secrets.compare_digest(given_user.encode(), user.encode())
+    password_ok = secrets.compare_digest(given_password.encode(), password.encode())
+    return user_ok and password_ok
+
+
+@app.middleware("http")
+async def require_basic_auth(request: Request, call_next):
+    """HTTP basic auth on every route when DASHBOARD_USER and DASHBOARD_PASSWORD are both set."""
+    user, password = os.environ.get("DASHBOARD_USER"), os.environ.get("DASHBOARD_PASSWORD")
+    if user and password and not basic_auth_ok(request.headers.get("authorization"), user, password):
+        return Response("Authentication required", 401, {"WWW-Authenticate": 'Basic realm="Screener"'})
+    return await call_next(request)
 
 
 @app.get("/")
@@ -339,8 +406,10 @@ def login(manual: bool = False) -> None:
         auth.client_from_manual_flow(*args)
     else:
         auth.client_from_login_flow(*args, callback_timeout=1800.0, interactive=False)
+    os.chmod(path, 0o600)
     status = token_status.token_status(token_status.read_login_time(Path(path)), datetime.now(ET))
     print(f"Token written to {path}; refresh token expires {status['expires_at']}")
+    print("A running server picks up the new token within a few seconds; no restart needed.")
 
 
 if __name__ == "__main__":
@@ -350,8 +419,9 @@ if __name__ == "__main__":
     else:
         import uvicorn
 
-        uvicorn.run(
-            app,
-            host=os.environ.get("SCREENER_HOST", "127.0.0.1"),
-            port=int(os.environ.get("SCREENER_PORT", "8000")),
-        )
+        host = os.environ.get("HOST") or "0.0.0.0"
+        if host not in ("127.0.0.1", "localhost") and not (
+            os.environ.get("DASHBOARD_USER") and os.environ.get("DASHBOARD_PASSWORD")
+        ):
+            log.warning("Listening on %s without DASHBOARD_USER/DASHBOARD_PASSWORD: no login required", host)
+        uvicorn.run(app, host=host, port=int(os.environ.get("PORT") or "8000"))
