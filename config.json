@@ -1,0 +1,15 @@
+{
+  "poll_seconds": 5,
+  "off_hours_poll_seconds": 300,
+  "history_init_time_et": "09:15",
+  "stats_history_days": 45,
+  "chart_history_days": 730,
+  "quote_chunk_size": 100,
+  "history_requests_per_minute": 100,
+  "topd_min_pct_from_open": 2.0,
+  "topd_min_rvol": 1.2,
+  "exclude_groups_from_breadth": [],
+  "token_lifetime_days": 7,
+  "token_warn_days": 2,
+  "token_urgent_days": 1
+}
