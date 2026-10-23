@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 
 
 def token_path() -> Path:
-    return Path(os.environ.get("SCHWAB_TOKEN_PATH", HERE / "token.json"))
+    return Path(os.environ.get("SCHWAB_TOKEN_PATH") or HERE / "token.json")
 
 
 def chunks(items: list[str], size: int) -> Iterable[list[str]]:
