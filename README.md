@@ -7,6 +7,7 @@ Live breadth monitor, screener, and daily chart for a custom ticker universe, on
 - **Refresh**: every 5 seconds during 9:30–16:00 ET on trading days; every 5 minutes otherwise (pre-market, after hours, weekends, holidays), so extended-hours prices still show up. The header badge shows the session and the current cadence.
 - **Token reminder**: a header badge counts down to the Schwab refresh-token expiry (7 days after `login`). From 2 days out a yellow banner appears; on the last day it turns red. The server logs a warning on each level change and hourly after that, and `meta.token` in `/api/screener-data` has `level`, `login_at`, `expires_at`, `seconds_left`.
 - **Chart**: daily candles, volume, 10 EMA red, 20 EMA blue, 50 SMA green, 200 SMA grey. Light background by default; the button switches it to dark.
+- **Order entry**: a collapsible panel under the table (not over the chart). Type or dictate an order, pick a risk preset, review the summary, then Confirm. Nothing is sent before Confirm. Demo mode shows the same panel and dialog and does not place an order.
 
 ## Run
 
@@ -38,7 +39,7 @@ Demo mode always refreshes every 5 seconds. Two demo-only variables help preview
 3. `python backend.py login` once. It opens the Schwab login in your browser and listens on the callback URL. After you sign in and approve, the browser warns about a self-signed certificate on `127.0.0.1:8182`; click Advanced → Proceed and the token is captured. The token is written to `token.json` (git-ignored). On a machine without a browser, use `python backend.py login --manual` and paste the redirected URL back.
 4. `python backend.py`. With `SCHWAB_APP_KEY` set the server uses Schwab; without it, demo data. `SCREENER_MODE=schwab|demo` forces either.
 
-The refresh token expires 7 days after `login`. The login time comes from `creation_timestamp` in the token file, which schwab-py keeps when it refreshes the access token. Run `login` again when the banner appears. A running server notices the new token within 5 seconds and reloads its Schwab client, so no restart is needed. It also starts without a token (the banner says so) and connects once the first login is done.
+The access token lasts about 30 minutes. The running server renews it in the background from the refresh token before it expires, including schwab-py's 5-minute early window, and writes that token file back without dropping the refresh token. The refresh token itself expires 7 days after `login`. The login time comes from `creation_timestamp` in the token file, which is kept across those access-token renewals. Run `login` again when the banner appears. A running server notices the new token within 5 seconds and reloads its Schwab client, so no restart is needed. It also starts without a token (the banner says so) and connects once the first login is done.
 
 ## Deploy to Hetzner (Ubuntu 24.04)
 
@@ -124,6 +125,28 @@ Edit `universe.json`. Groups are labels shown next to each ticker; the screener 
 - `rvol_pace = volume / (avg_volume_20d * share of the 9:30–16:00 session elapsed)` (Paced RVOL column). Blank before the open; equal to `rvol` after the close.
 - Outside the regular session Schwab's `quote.lastPrice` stays at the 16:00 print, so Price uses `extended.lastPrice` when its trade is newer (shown in purple; hover for the regular close). `prev_close` stays the prior session's `closePrice`, so % Day after hours is the extended price against yesterday's close. The chart's daily bar keeps the regular-session close.
 - Fields whose inputs are missing or zero (for example open before 9:30) show `—` and are not counted.
+
+## Order entry
+
+The panel sits under the screener table. Presets are 0.25%, 0.33%, 0.5%, and 1%. **0.5% is selected by default.** A percent in the instruction (for example `with 1% stop`) overrides the button. The mic button uses the browser Speech Recognition API (`webkitSpeechRecognition`).
+
+Review parses the text and opens a confirmation dialog. That step reads the account equity and the quote. It does not call Schwab `place_order`. Confirm is the only action that can send. Cancel sends nothing. In demo mode Confirm describes the order and does not call Schwab; demo equity is a fixed $250,000 so the dialog has a number to show.
+
+**Default order.** A ticker on its own, or `buy NVDA` with no share count, is a **buy**, **market**, **stop-market at the low of day**. The share count is
+
+```
+floor(account_equity × risk% / (last − low_of_day))
+```
+
+using the **last price read when Confirm is accepted**. With the default 0.5% risk the budget is `equity × 0.005`. On the demo account that is $1,250. If NVDA's last is $140 and the low of day is $135, the distance is $5 and the order is **250 shares**. If the last is at or below the low, the distance is zero and the order is rejected before any division. An explicit share count (`buy 100 TSLA`) is used as given; the dialog still shows the risk budget and the stop.
+
+If the live quote at Confirm changes the share count, the stop, or the equity in the dialog, the dialog updates and **nothing is sent** until you confirm the new sentence.
+
+Sells are **sell-short** with a **buy-to-cover stop-market**. With no share count the stop is the high of day and the distance is `high − last`. `sell 50 AAPL limit 185 with 1% stop` is a limit sell-short of 50 shares; the 1% is the equity-risk budget, not a price offset. Buys and sells may be market or limit. Every stop is stop-market. Stocks and ETFs only: options and futures are rejected.
+
+**Schwab order path.** One `place_order` of a TRIGGER order built with `schwab.orders.common.first_triggers_second`. The entry is the parent. The child is `OrderType.STOP`, which schwab-py defines as stop-market (Schwab submits a market order when the stop is touched). Session is `NORMAL`, duration `DAY`. OCO is not used: an OCO would rest the stop at the same time as the entry, and the stop must wait until the entry fills. If the trigger is rejected, the entry is not sent by itself. Equity is `currentBalances.equity` on the first linked account, or `liquidationValue` when equity is missing. Placing orders needs Accounts and Trading on the Schwab app, not only Market Data. The server polls the trigger and raises an alert when the stop child fills or the order is rejected.
+
+**Alerts.** Submit, stop fill, and errors (parse, reject, API) show an in-app popup and a browser notification. The same text is emailed when `ORDER_ALERT_EMAIL` and `SMTP_HOST` are set. With the address set and SMTP unset, the server logs the email instead of sending it. `ORDER_ALERT_PHONE` is an SMS placeholder: the server logs the message and does not contact a carrier. Both variables are empty in `.env.example`. Set them only in the untracked `.env`.
 
 ## Tests
 

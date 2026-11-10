@@ -47,6 +47,15 @@ class SchwabSource:
         self._min_gap = 60.0 / max(1, history_per_minute)
         self._last_call = 0.0
         self._lock = threading.Lock()
+        self._before_request = None
+
+    def set_before_request(self, callback) -> None:
+        """Run before each quote or history call. The screener uses this to renew the access token."""
+        self._before_request = callback
+
+    def _prepare(self) -> None:
+        if self._before_request is not None:
+            self._before_request()
 
     def _throttle(self) -> None:
         with self._lock:
@@ -56,6 +65,7 @@ class SchwabSource:
             self._last_call = time.monotonic()
 
     def get_quotes(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        self._prepare()
         quotes: dict[str, dict[str, Any]] = {}
         for batch in chunks(symbols, self.chunk_size):
             response = self.client.get_quotes(batch)
@@ -67,6 +77,7 @@ class SchwabSource:
         return quotes
 
     def get_daily_history(self, symbol: str, days: int) -> list[dict[str, Any]]:
+        self._prepare()
         self._throttle()
         response = self.client.get_price_history_every_day(
             symbol,
@@ -157,12 +168,16 @@ class DemoSource:
             if state is None:
                 rng = self._rng(symbol, datetime.now(ET).date().isoformat())
                 open_price = prev["close"] * (1 + rng.gauss(0.002, 0.012))
+                price = open_price * (1 + rng.gauss(0.004, 0.015))
+                # A real session has a range, so the low of day starts below the last print.
+                # Order sizing divides by (last - low) and rejects a zero distance.
+                spread = max(0.005, abs(rng.gauss(0.01, 0.004)))
                 state = {
                     "rng": rng,
                     "open": open_price,
-                    "price": open_price * (1 + rng.gauss(0.004, 0.015)),
-                    "high": open_price,
-                    "low": open_price,
+                    "price": price,
+                    "high": max(open_price, price) * (1 + spread),
+                    "low": min(open_price, price) * (1 - spread),
                     "rvol_target": rng.uniform(0.4, 2.4),
                 }
                 self._live[symbol] = state
