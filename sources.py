@@ -157,12 +157,16 @@ class DemoSource:
             if state is None:
                 rng = self._rng(symbol, datetime.now(ET).date().isoformat())
                 open_price = prev["close"] * (1 + rng.gauss(0.002, 0.012))
+                price = open_price * (1 + rng.gauss(0.004, 0.015))
+                # A real session has a range, so the low of day starts below the last print.
+                # Order sizing divides by (last - low) and rejects a zero distance.
+                spread = max(0.005, abs(rng.gauss(0.01, 0.004)))
                 state = {
                     "rng": rng,
                     "open": open_price,
-                    "price": open_price * (1 + rng.gauss(0.004, 0.015)),
-                    "high": open_price,
-                    "low": open_price,
+                    "price": price,
+                    "high": max(open_price, price) * (1 + spread),
+                    "low": min(open_price, price) * (1 - spread),
                     "rvol_target": rng.uniform(0.4, 2.4),
                 }
                 self._live[symbol] = state

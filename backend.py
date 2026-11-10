@@ -28,9 +28,12 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
+from pydantic import BaseModel
+
 import metrics
 import token_status
 from market_calendar import holiday_set
+from orders import OrderBook, OrderError
 from sources import ET, HERE, make_source, token_path
 
 load_dotenv(HERE / ".env")
@@ -127,6 +130,7 @@ class Screener:
         self.stop = threading.Event()
         self.ensure_source()
         self.reload_universe()
+        self.orders = OrderBook.for_screener(self)
 
     def ensure_source(self) -> None:
         """Create the data source; in Schwab mode, (re)create it when a token appears or a new
@@ -338,6 +342,7 @@ async def lifespan(_: FastAPI):
     threads = [
         threading.Thread(target=screener.history_loop, daemon=True, name="history"),
         threading.Thread(target=screener.quote_loop, daemon=True, name="quotes"),
+        threading.Thread(target=screener.orders.watch_loop, args=(screener.stop,), daemon=True, name="orders"),
     ]
     for thread in threads:
         thread.start()
@@ -377,6 +382,45 @@ def index() -> FileResponse:
 @app.get("/api/screener-data")
 def screener_data() -> dict[str, Any]:
     return screener.snapshot()
+
+
+class PreviewRequest(BaseModel):
+    instruction: str = ""
+    risk_pct: float | None = 0.5
+
+
+class ConfirmRequest(BaseModel):
+    preview_id: str
+
+
+def _order_call(method, *args):
+    book = screener.orders
+    try:
+        return method(*args)
+    except OrderError as exc:
+        book.notify("error", str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("Order request failed")
+        book.notify("error", "Order failed")
+        raise HTTPException(status_code=502, detail="Order failed") from exc
+
+
+@app.post("/api/orders/preview")
+def preview_order(body: PreviewRequest) -> dict[str, Any]:
+    """Parse and price an order. Does not call Schwab place_order."""
+    return _order_call(screener.orders.preview, body.instruction, body.risk_pct)
+
+
+@app.post("/api/orders/confirm")
+def confirm_order(body: ConfirmRequest) -> dict[str, Any]:
+    """Send the preview. Demo mode returns the order and does not call Schwab."""
+    return _order_call(screener.orders.confirm, body.preview_id)
+
+
+@app.get("/api/orders/alerts")
+def order_alerts() -> dict[str, Any]:
+    return {"alerts": screener.orders.drain_alerts()}
 
 
 @app.get("/api/candles")
