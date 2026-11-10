@@ -39,7 +39,7 @@ Demo mode always refreshes every 5 seconds. Two demo-only variables help preview
 3. `python backend.py login` once. It opens the Schwab login in your browser and listens on the callback URL. After you sign in and approve, the browser warns about a self-signed certificate on `127.0.0.1:8182`; click Advanced → Proceed and the token is captured. The token is written to `token.json` (git-ignored). On a machine without a browser, use `python backend.py login --manual` and paste the redirected URL back.
 4. `python backend.py`. With `SCHWAB_APP_KEY` set the server uses Schwab; without it, demo data. `SCREENER_MODE=schwab|demo` forces either.
 
-The refresh token expires 7 days after `login`. The login time comes from `creation_timestamp` in the token file, which schwab-py keeps when it refreshes the access token. Run `login` again when the banner appears. A running server notices the new token within 5 seconds and reloads its Schwab client, so no restart is needed. It also starts without a token (the banner says so) and connects once the first login is done.
+The access token lasts about 30 minutes. The running server renews it in the background from the refresh token before it expires, including schwab-py's 5-minute early window, and writes that token file back without dropping the refresh token. The refresh token itself expires 7 days after `login`. The login time comes from `creation_timestamp` in the token file, which is kept across those access-token renewals. Run `login` again when the banner appears. A running server notices the new token within 5 seconds and reloads its Schwab client, so no restart is needed. It also starts without a token (the banner says so) and connects once the first login is done.
 
 ## Deploy to Hetzner (Ubuntu 24.04)
 

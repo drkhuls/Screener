@@ -31,6 +31,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 import metrics
+import token_refresh
 import token_status
 from market_calendar import holiday_set
 from orders import OrderBook, OrderError
@@ -129,6 +130,10 @@ class Screener:
             self.demo_login_at = datetime.now(ET) - timedelta(hours=float(demo_age))
         self.stop = threading.Event()
         self.ensure_source()
+        try:
+            self.renew_access_token()
+        except token_refresh.TokenRefreshError:
+            pass
         self.reload_universe()
         self.orders = OrderBook.for_screener(self)
 
@@ -155,9 +160,40 @@ class Screener:
             return
         log.info("Schwab client loaded (login %s)", login_at.isoformat())
         self.source, self.source_login_at = source, login_at
+        prepare = getattr(source, "set_before_request", None)
+        if prepare is not None:
+            prepare(self.renew_access_token)
         self.last_poll = None
         self.errors.pop("schwab", None)
         self.errors.pop("quotes", None)
+
+    def renew_access_token(self) -> None:
+        """Exchange the refresh token before the access token expires, and keep the new token on disk.
+
+        schwab-py marks the access token expired 5 minutes early. Doing this on the quote loop,
+        and before quote and history calls, means the live client still has a refresh token when
+        that window opens. A token file with no refresh token raises TokenRefreshError.
+        """
+        if self.mode != "schwab" or self.source is None:
+            return
+        key = os.environ.get("SCHWAB_APP_KEY", "")
+        secret = os.environ.get("SCHWAB_APP_SECRET", "")
+        if not key or not secret:
+            raise token_refresh.TokenRefreshError(
+                "Schwab app credentials are not set. Run: python backend.py login"
+            )
+        try:
+            refreshed, token = token_refresh.renew(token_path(), key, secret)
+        except token_refresh.TokenRefreshError as exc:
+            self.errors["token"] = str(exc)
+            log.warning("%s", exc)
+            raise
+        self.errors.pop("token", None)
+        client = getattr(self.source, "client", None)
+        if client is not None:
+            token_refresh.sync_client(client, token, replaced=refreshed)
+        if refreshed:
+            log.info("Refreshed Schwab access token")
 
     def reload_universe(self) -> bool:
         mtime = UNIVERSE_PATH.stat().st_mtime
@@ -170,6 +206,10 @@ class Screener:
         return True
 
     def load_stats(self, symbols: list[str]) -> None:
+        try:
+            self.renew_access_token()
+        except token_refresh.TokenRefreshError:
+            return
         today = datetime.now(ET).date()
         for symbol in symbols:
             try:
@@ -179,9 +219,10 @@ class Screener:
                     self.stats[symbol] = stats
                     self.errors.pop(f"history:{symbol}", None)
             except Exception as exc:
-                log.warning("History %s: %s", symbol, exc)
+                message = token_refresh.public_error(exc)
+                log.warning("History %s: %s", symbol, message)
                 with self.lock:
-                    self.errors[f"history:{symbol}"] = str(exc)
+                    self.errors[f"history:{symbol}"] = message
 
     def history_loop(self) -> None:
         """Daily init at the configured ET time; also on startup and when new tickers appear."""
@@ -236,6 +277,10 @@ class Screener:
             except Exception as exc:
                 self.errors["universe"] = f"universe.json: {exc}"
             self.ensure_source()
+            try:
+                self.renew_access_token()
+            except token_refresh.TokenRefreshError:
+                pass
             self.check_token()
             interval = poll_interval(self.config, now, self.mode)
             if self.last_poll is None or time.monotonic() - self.last_poll >= interval - tick / 2:
@@ -249,8 +294,9 @@ class Screener:
         try:
             quotes = self.source.get_quotes(list(self.universe))
         except Exception as exc:
-            log.warning("Quotes: %s", exc)
-            self.errors["quotes"] = str(exc)
+            message = token_refresh.public_error(exc)
+            log.warning("Quotes: %s", message)
+            self.errors["quotes"] = message
             return
         with self.lock:
             self.quotes = quotes
@@ -316,6 +362,7 @@ class Screener:
         else:
             if self.source is None:
                 raise RuntimeError(self.errors.get("schwab", "No data source"))
+            self.renew_access_token()
             history = self.source.get_daily_history(symbol, self.config["chart_history_days"])
             self.chart_cache[symbol] = (today, history)
         live = next((r for r in self.rows() if r["symbol"] == symbol), None)
@@ -431,7 +478,7 @@ def candles(symbol: str = Query(..., min_length=1, max_length=12)) -> dict[str, 
     try:
         return screener.candles(symbol)
     except Exception as exc:
-        raise HTTPException(502, f"{symbol}: {exc}") from exc
+        raise HTTPException(502, f"{symbol}: {token_refresh.public_error(exc)}") from exc
 
 
 def login(manual: bool = False) -> None:
