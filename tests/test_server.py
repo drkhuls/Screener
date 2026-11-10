@@ -76,6 +76,53 @@ def _stable_quotes(self, symbols):
     }
 
 
+def test_watchlist_page_has_upload_scan_filter_and_chart_controls(demo_client):
+    html = demo_client.get("/").text
+    assert 'id="watchlist-file"' in html and 'id="watchlist-replace"' in html and 'id="watchlist-merge"' in html
+    assert 'id="add-symbol"' in html and 'id="add-ticker"' in html
+    assert 'id="scan-clear"' in html and "Show all" in html
+    assert 'id="bw"' in html and ">B&amp;W<" in html
+    assert ">Dark mode<" in html and "Dark chart" not in html
+    assert 'class="ma-type"' in html and "Show or hide" in html
+
+
+def test_watchlist_upload_replaces_or_merges_and_add_keeps_groups(demo_client, tmp_path, monkeypatch):
+    path = tmp_path / "universe.json"
+    path.write_text(json.dumps({"groups": {"Indexes": ["SPY"]}, "tickers": []}))
+    original = backend.UNIVERSE_PATH
+    screener = backend.screener
+    monkeypatch.setattr(backend, "UNIVERSE_PATH", path)
+    screener.universe_mtime = 0
+    screener.reload_universe()
+    try:
+        replaced = demo_client.post(
+            "/api/universe",
+            json={"mode": "replace", "text": "ticker,group\nAMD,Focus\nTSLA,Focus\nAAPL\n"},
+        )
+        assert replaced.status_code == 200
+        assert replaced.json()["symbols"] == ["AMD", "TSLA", "AAPL"]
+        saved = json.loads(path.read_text())
+        assert saved["groups"] == {"Focus": ["AMD", "TSLA"]}
+        assert saved["tickers"] == ["AAPL"]
+
+        merged = demo_client.post("/api/universe", json={"mode": "merge", "text": "NVDA\nAMD\n"})
+        assert merged.status_code == 200
+        saved = json.loads(path.read_text())
+        assert saved["groups"]["Focus"] == ["AMD", "TSLA"]
+        assert saved["tickers"] == ["AAPL", "NVDA"]
+
+        added = demo_client.post("/api/universe/symbol", json={"symbol": "mu"})
+        assert added.status_code == 200 and "MU" in added.json()["symbols"]
+        assert json.loads(path.read_text())["groups"]["Focus"] == ["AMD", "TSLA"]
+        bad = demo_client.post("/api/universe/symbol", json={"symbol": "/ES"})
+        assert bad.status_code == 400 and "ticker" in bad.json()["detail"].lower()
+        assert "/ES" not in path.read_text()
+    finally:
+        backend.UNIVERSE_PATH = original
+        screener.universe_mtime = 0
+        screener.reload_universe()
+
+
 def test_order_panel_is_under_the_table(demo_client):
     html = demo_client.get("/").text
     table = html.index('<section class="box table-wrap">')

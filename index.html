@@ -33,9 +33,20 @@
   .box { background: var(--panel); border: 1px solid var(--line); }
 
   /* Section A: Top Scans (thinkorswim style) */
-  .scans-head { padding: 5px 8px; font-weight: 600; border-bottom: 1px solid var(--line); background: #202020; }
-  .scan { display: grid; grid-template-columns: 1fr 120px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #000; }
-  .scan.total { background: #3a3a3a; }
+  .scans-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-weight: 600; border-bottom: 1px solid var(--line); background: #202020; }
+  #scan-clear { margin-left: auto; padding: 1px 8px; font-weight: 500; }
+  #scan-clear[hidden] { display: none; }
+  .watchlist, .add-ticker { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .add-ticker { border-bottom: 0; }
+  .watchlist input[type="file"] { display: none; }
+  label.file-btn { background: #2a2a2a; color: var(--text); border: 1px solid #444; padding: 3px 10px; border-radius: 3px; cursor: pointer; }
+  .add-ticker input { flex: 1; min-width: 0; background: #0b0b0b; color: var(--text); border: 1px solid #555; border-radius: 3px; padding: 5px 8px; font: inherit; }
+  .add-ticker input:focus { outline: none; border-color: #888; }
+  .watch-note { color: var(--muted); font-size: 11px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.scan { display: grid; grid-template-columns: 1fr 120px; align-items: center; width: 100%; text-align: left; padding: 6px 8px; border: 0; border-bottom: 1px solid #000; border-radius: 0; background: transparent; color: inherit; }
+  button.scan:hover { background: #242424; }
+  button.scan.total { background: #3a3a3a; }
+  button.scan.active { background: #26324a; }
   .scan .num { text-align: center; font-variant-numeric: tabular-nums; }
   .bar { height: 7px; background: #0b0b0b; border: 1px solid #555; margin-top: 2px; }
   .bar > i { display: block; height: 100%; background: #9a9a9a; width: 0; transition: width .4s; }
@@ -63,11 +74,17 @@
   .chart-box { display: flex; flex-direction: column; min-height: 0; }
   .chart-head { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
   .chart-head b { font-size: 14px; }
-  .legend { display: flex; gap: 10px; font-size: 12px; color: var(--muted); }
-  .legend span::before { content: ""; display: inline-block; width: 12px; height: 2px; margin-right: 4px; vertical-align: middle; background: currentColor; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--muted); }
+  .ma { display: inline-flex; align-items: center; gap: 4px; }
+  .ma-vis { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; }
+  .ma-vis i { width: 12px; height: 2px; background: currentColor; display: inline-block; }
+  .ma.off .ma-vis { opacity: 0.35; text-decoration: line-through; }
+  .ma input { width: 46px; background: #111; color: var(--text); border: 1px solid #444; border-radius: 3px; padding: 2px 4px; font: inherit; }
+  .ma-type { padding: 2px 6px; min-width: 42px; }
   #ohlc { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
   button { background: #2a2a2a; color: var(--text); border: 1px solid #444; padding: 3px 10px; border-radius: 3px; cursor: pointer; font: inherit; }
-  #theme { margin-left: auto; }
+  .chart-actions { margin-left: auto; display: flex; gap: 8px; }
+  #bw[aria-pressed="true"] { background: #3a3a3a; border-color: #c8c8c8; color: #fff; }
 
   /* Order entry, under the table */
   #order-entry { flex: 0 0 auto; }
@@ -120,7 +137,16 @@
 <main>
   <div class="left">
     <section class="box" id="scans">
-      <div class="scans-head">Top Scans ▾</div>
+      <div class="scans-head">
+        <span>Top Scans ▾</span>
+        <button type="button" id="scan-clear" hidden>Show all</button>
+      </div>
+      <div class="watchlist">
+        <label class="file-btn">Upload<input id="watchlist-file" type="file" accept=".txt,.csv,text/plain,text/csv" aria-label="Watchlist file"></label>
+        <button type="button" id="watchlist-replace" title="Replace the universe with this file">Replace</button>
+        <button type="button" id="watchlist-merge" title="Add this file to the universe">Merge</button>
+        <span id="watchlist-note" class="watch-note"></span>
+      </div>
       <div id="scan-rows"></div>
     </section>
     <section class="box table-wrap">
@@ -129,6 +155,11 @@
         <tbody id="rows"></tbody>
       </table>
     </section>
+    <form id="add-ticker" class="box add-ticker">
+      <input id="add-symbol" type="text" maxlength="12" placeholder="Add ticker" autocomplete="off" spellcheck="false" aria-label="Add ticker">
+      <button type="submit">Add</button>
+      <span id="add-note" class="watch-note"></span>
+    </form>
     <section class="box" id="order-entry">
       <button type="button" class="order-toggle" id="order-toggle" aria-expanded="true" aria-controls="order-body">Order Entry ▾</button>
       <div id="order-body">
@@ -154,14 +185,12 @@
   <section class="box chart-box">
     <div class="chart-head">
       <b id="chart-symbol">—</b>
-      <div class="legend">
-        <span style="color:#ef5350">10 EMA</span>
-        <span style="color:#2962ff">20 EMA</span>
-        <span style="color:#2e9d4f">50 SMA</span>
-        <span style="color:#9e9e9e">200 SMA</span>
-      </div>
+      <div class="legend" id="legend"></div>
       <span id="ohlc"></span>
-      <button id="theme">Dark chart</button>
+      <div class="chart-actions">
+        <button type="button" id="bw" aria-pressed="false" title="Hollow up candles and filled down candles">B&amp;W</button>
+        <button type="button" id="theme">Dark mode</button>
+      </div>
     </div>
     <div id="chart"><div id="chart-msg">Click a row to chart it</div></div>
   </section>
@@ -201,12 +230,42 @@ const THEMES = {
   dark: { background: "#121212", text: "#cccccc", grid: "#1f1f1f", border: "#333333" },
 };
 
+const DEFAULT_MAS = [
+  { period: 10, type: "EMA", color: "#ef5350", visible: true },
+  { period: 20, type: "EMA", color: "#2962ff", visible: true },
+  { period: 50, type: "SMA", color: "#2e9d4f", visible: true },
+  { period: 200, type: "SMA", color: "#9e9e9e", visible: true },
+];
+
+function loadMas() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("screener.mas") || "null");
+    if (!Array.isArray(saved) || saved.length !== DEFAULT_MAS.length) return DEFAULT_MAS.map((item) => ({ ...item }));
+    return DEFAULT_MAS.map((item, index) => {
+      const period = Number(saved[index].period);
+      const type = saved[index].type === "SMA" ? "SMA" : "EMA";
+      return {
+        period: Number.isInteger(period) && period >= 1 && period <= 500 ? period : item.period,
+        type,
+        color: item.color,
+        visible: saved[index].visible !== false,
+      };
+    });
+  } catch (err) {
+    return DEFAULT_MAS.map((item) => ({ ...item }));
+  }
+}
+
 const state = {
   sort: JSON.parse(localStorage.getItem("screener.sort") || "null") || { key: "pct_from_close", dir: "desc" },
   selected: localStorage.getItem("screener.symbol"),
   theme: localStorage.getItem("screener.theme") || "light",
+  bw: localStorage.getItem("screener.bw") === "1",
+  scan: null,
+  mas: loadMas(),
   data: null,
   chartBars: null,
+  chartVolume: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -225,14 +284,23 @@ const signClass = (v) => (v == null || v === 0 ? "" : v > 0 ? "pos" : "neg");
 
 function renderScans(summary) {
   const total = summary.universe_count || 0;
+  $("scan-clear").hidden = !state.scan;
   $("scan-rows").innerHTML = SCANS.map(([key, label, isTotal]) => {
     const count = summary[key] ?? 0;
     const width = total ? (count / total) * 100 : 0;
-    return `<div class="scan${isTotal ? " total" : ""}">
+    const active = !isTotal && state.scan === key;
+    return `<button type="button" class="scan${isTotal ? " total" : ""}${active ? " active" : ""}" data-scan="${isTotal ? "" : key}" aria-pressed="${active}">
       <span>${label}</span>
       <div><div class="num">${count}</div><div class="bar"><i style="width:${width}%"></i></div></div>
-    </div>`;
+    </button>`;
   }).join("");
+}
+
+function setScan(key) {
+  state.scan = key && state.scan !== key ? key : null;
+  if (!state.data) return;
+  renderScans(state.data.summary);
+  renderTable();
 }
 
 function renderHead() {
@@ -254,10 +322,16 @@ function sortedStocks(stocks) {
   });
 }
 
+function visibleStocks(stocks) {
+  if (!state.scan || !state.data) return stocks;
+  const members = new Set((state.data.summary.scans || {})[state.scan] || []);
+  return stocks.filter((s) => members.has(s.symbol));
+}
+
 function renderTable() {
   const { stocks, meta } = state.data;
   const hotRvol = meta.thresholds.topd_min_rvol;
-  $("rows").innerHTML = sortedStocks(stocks).map((s) => `
+  $("rows").innerHTML = sortedStocks(visibleStocks(stocks)).map((s) => `
     <tr data-symbol="${s.symbol}" class="${s.symbol === state.selected ? "selected" : ""}">
       <td class="sym">${s.symbol}${s.group ? `<small>${s.group}</small>` : ""}</td>
       <td${s.extended_hours ? ` class="ext" title="Extended-hours trade · regular close ${fmtPrice(s.regular_price)}"` : ""}>${fmtPrice(s.price)}</td>
@@ -315,27 +389,76 @@ function renderStatus() {
   $("errors").textContent = errors.length ? errors.slice(0, 3).join(" · ") + (errors.length > 3 ? ` (+${errors.length - 3} more)` : "") : "";
 }
 
+async function loadScreener() {
+  const res = await fetch("/api/screener-data", { cache: "no-store" });
+  if (!res.ok) throw new Error(res.status);
+  state.data = await res.json();
+  renderScans(state.data.summary);
+  renderHead();
+  renderTable();
+  renderStatus();
+  updateLiveBar();
+  if (!state.selected && state.data.stocks.length) {
+    state.selected = sortedStocks(visibleStocks(state.data.stocks))[0].symbol;
+    renderTable();
+    loadChart(state.selected);
+  }
+}
+
 async function poll() {
   try {
-    const res = await fetch("/api/screener-data", { cache: "no-store" });
-    if (!res.ok) throw new Error(res.status);
-    state.data = await res.json();
-    renderScans(state.data.summary);
-    renderHead();
-    renderTable();
-    renderStatus();
-    updateLiveBar();
-    if (!state.selected && state.data.stocks.length) {
-      state.selected = sortedStocks(state.data.stocks)[0].symbol;
-      renderTable();
-      loadChart(state.selected);
-    }
+    await loadScreener();
   } catch (err) {
     $("status").textContent = "Backend unreachable — retrying";
   } finally {
     setTimeout(poll, POLL_MS);
   }
 }
+
+async function postUniverse(url, body, noteId) {
+  const note = $(noteId);
+  note.textContent = "Saving…";
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      note.textContent = typeof data.detail === "string" ? data.detail : "Could not update the watchlist";
+      return false;
+    }
+    note.textContent = data.count + (data.count === 1 ? " ticker" : " tickers");
+    await loadScreener();
+    return true;
+  } catch (err) {
+    note.textContent = "Could not update the watchlist";
+    return false;
+  }
+}
+
+async function sendWatchlist(mode) {
+  const file = $("watchlist-file").files[0];
+  if (!file) {
+    $("watchlist-note").textContent = "Choose a txt or csv file";
+    return;
+  }
+  const text = await file.text();
+  await postUniverse("/api/universe", { mode, text }, "watchlist-note");
+}
+$("watchlist-replace").addEventListener("click", () => sendWatchlist("replace"));
+$("watchlist-merge").addEventListener("click", () => sendWatchlist("merge"));
+$("watchlist-file").addEventListener("change", () => {
+  const file = $("watchlist-file").files[0];
+  $("watchlist-note").textContent = file ? file.name : "";
+});
+$("add-ticker").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const symbol = $("add-symbol").value.trim();
+  if (!symbol) return;
+  if (await postUniverse("/api/universe/symbol", { symbol }, "add-note")) $("add-symbol").value = "";
+});
 
 $("head").addEventListener("click", (e) => {
   const th = e.target.closest("th");
@@ -348,6 +471,13 @@ $("head").addEventListener("click", (e) => {
   renderHead();
   if (state.data) renderTable();
 });
+
+$("scan-rows").addEventListener("click", (e) => {
+  const row = e.target.closest("button.scan");
+  if (!row) return;
+  setScan(row.dataset.scan || null);
+});
+$("scan-clear").addEventListener("click", () => setScan(null));
 
 $("rows").addEventListener("click", (e) => {
   const tr = e.target.closest("tr");
@@ -372,12 +502,82 @@ const candleSeries = chart.addCandlestickSeries({
 const volumeSeries = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
 chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
 const lineOpts = (color) => ({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-const maSeries = {
-  ema10: chart.addLineSeries(lineOpts("#ef5350")),
-  ema20: chart.addLineSeries(lineOpts("#2962ff")),
-  sma50: chart.addLineSeries(lineOpts("#2e9d4f")),
-  sma200: chart.addLineSeries(lineOpts("#9e9e9e")),
-};
+const maSeries = state.mas.map((item) => chart.addLineSeries(lineOpts(item.color)));
+
+function smaValues(values, length) {
+  const out = new Array(values.length).fill(null);
+  let running = 0;
+  for (let i = 0; i < values.length; i++) {
+    running += values[i];
+    if (i >= length) running -= values[i - length];
+    if (i >= length - 1) out[i] = running / length;
+  }
+  return out;
+}
+
+function emaValues(values, length) {
+  const out = new Array(values.length).fill(null);
+  if (values.length < length) return out;
+  const alpha = 2 / (length + 1);
+  let current = values.slice(0, length).reduce((sum, value) => sum + value, 0) / length;
+  out[length - 1] = current;
+  for (let i = length; i < values.length; i++) {
+    current = values[i] * alpha + current * (1 - alpha);
+    out[i] = current;
+  }
+  return out;
+}
+
+function maLine(bars, spec) {
+  if (!spec.visible) return [];
+  const closes = bars.map((bar) => bar.close);
+  const values = spec.type === "SMA" ? smaValues(closes, spec.period) : emaValues(closes, spec.period);
+  return bars.flatMap((bar, index) => (values[index] == null ? [] : [{ time: bar.time, value: Math.round(values[index] * 10000) / 10000 }]));
+}
+
+function candleColors() {
+  if (state.bw && state.theme === "dark") {
+    return { upColor: "#121212", downColor: "#ffffff", borderUpColor: "#ffffff", borderDownColor: "#ffffff", wickUpColor: "#ffffff", wickDownColor: "#ffffff" };
+  }
+  if (state.bw) {
+    return { upColor: "#ffffff", downColor: "#000000", borderUpColor: "#000000", borderDownColor: "#000000", wickUpColor: "#000000", wickDownColor: "#000000" };
+  }
+  return { upColor: "#26a69a", downColor: "#ef5350", borderUpColor: "#26a69a", borderDownColor: "#ef5350", wickUpColor: "#26a69a", wickDownColor: "#ef5350" };
+}
+
+function volumeColor(up) {
+  if (state.bw && state.theme === "dark") return up ? "#8a8a8a" : "#f5f5f5";
+  if (state.bw) return up ? "#c8c8c8" : "#111111";
+  return (up ? "#26a69a" : "#ef5350") + "80";
+}
+
+function paintChart() {
+  candleSeries.applyOptions(candleColors());
+  if (!state.chartBars) return;
+  const byTime = new Map(state.chartBars.map((bar) => [bar.time, bar]));
+  volumeSeries.setData((state.chartVolume || []).map((bar) => {
+    const candle = byTime.get(bar.time);
+    const up = candle ? candle.close >= candle.open : true;
+    return { time: bar.time, value: bar.value, color: volumeColor(up) };
+  }));
+  state.mas.forEach((spec, index) => {
+    maSeries[index].applyOptions({ color: spec.color, visible: spec.visible });
+    maSeries[index].setData(maLine(state.chartBars, spec));
+  });
+}
+
+function saveMas() {
+  localStorage.setItem("screener.mas", JSON.stringify(state.mas.map(({ period, type, visible }) => ({ period, type, visible }))));
+}
+
+function renderLegend() {
+  $("legend").innerHTML = state.mas.map((spec, index) => `
+    <span class="ma${spec.visible ? "" : " off"}" data-ma="${index}">
+      <button type="button" class="ma-vis" style="color:${spec.color}" title="Show or hide" aria-pressed="${spec.visible}"><i></i></button>
+      <input class="ma-period" type="number" min="1" max="500" step="1" value="${spec.period}" aria-label="Moving average period">
+      <button type="button" class="ma-type" title="Switch EMA or SMA">${spec.type}</button>
+    </span>`).join("");
+}
 
 function applyTheme() {
   const t = THEMES[state.theme];
@@ -387,13 +587,45 @@ function applyTheme() {
     rightPriceScale: { borderColor: t.border },
     timeScale: { borderColor: t.border },
   });
-  $("theme").textContent = state.theme === "light" ? "Dark chart" : "Light chart";
+  $("theme").textContent = state.theme === "light" ? "Dark mode" : "Light mode";
+  $("bw").setAttribute("aria-pressed", String(state.bw));
+  paintChart();
 }
 $("theme").addEventListener("click", () => {
   state.theme = state.theme === "light" ? "dark" : "light";
   localStorage.setItem("screener.theme", state.theme);
   applyTheme();
 });
+$("bw").addEventListener("click", () => {
+  state.bw = !state.bw;
+  localStorage.setItem("screener.bw", state.bw ? "1" : "0");
+  applyTheme();
+});
+$("legend").addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-ma]");
+  if (!chip) return;
+  const spec = state.mas[Number(chip.dataset.ma)];
+  if (event.target.closest(".ma-vis")) spec.visible = !spec.visible;
+  else if (event.target.closest(".ma-type")) spec.type = spec.type === "EMA" ? "SMA" : "EMA";
+  else return;
+  saveMas();
+  renderLegend();
+  paintChart();
+});
+$("legend").addEventListener("change", (event) => {
+  const input = event.target.closest(".ma-period");
+  if (!input) return;
+  const spec = state.mas[Number(input.closest("[data-ma]").dataset.ma)];
+  const period = Number(input.value);
+  if (!Number.isInteger(period) || period < 1 || period > 500) {
+    input.value = spec.period;
+    return;
+  }
+  spec.period = period;
+  saveMas();
+  paintChart();
+});
+renderLegend();
 applyTheme();
 
 let chartRequest = 0;
@@ -406,10 +638,10 @@ async function loadChart(symbol) {
     if (!res.ok) throw new Error((await res.json()).detail || res.status);
     const data = await res.json();
     if (request !== chartRequest) return;
-    candleSeries.setData(data.candles);
-    volumeSeries.setData(data.volume);
-    for (const [key, series] of Object.entries(maSeries)) series.setData(data[key]);
     state.chartBars = data.candles;
+    state.chartVolume = data.volume;
+    candleSeries.setData(data.candles);
+    paintChart();
     const n = data.candles.length;
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 130), to: n + 8 });
     $("chart-msg").textContent = "";
@@ -431,8 +663,10 @@ function updateLiveBar() {
     high: Math.max(s.high ?? price, s.open, price), low: Math.min(s.low ?? price, s.open, price),
   };
   bars[bars.length - 1] = bar;
+  const volume = (state.chartVolume || []).find((item) => item.time === bar.time);
+  if (volume) volume.value = s.volume || 0;
   candleSeries.update(bar);
-  volumeSeries.update({ time: bar.time, value: s.volume || 0, color: (bar.close >= bar.open ? "#26a69a" : "#ef5350") + "80" });
+  paintChart();
 }
 
 chart.subscribeCrosshairMove((param) => {

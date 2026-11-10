@@ -48,6 +48,25 @@ def test_stock_row_guards_missing_and_zero():
     assert row["price"] is None and row["pct_from_open"] is None
 
 
+def test_scan_members_match_the_breadth_counts():
+    rows = [
+        {"symbol": "AAA", "price": 102, "open": 100, "prev_close": 99, "pct_from_open": 2.0, "rvol": 1.2},
+        {"symbol": "BBB", "price": 98, "open": 101, "prev_close": 100, "pct_from_open": -2.97, "rvol": 3.0},
+        {"symbol": "CCC", "price": None, "open": None, "prev_close": 50, "pct_from_open": None, "rvol": None},
+    ]
+    members = metrics.scan_members(rows)
+    assert members == {
+        "gapped_up": ["AAA", "BBB"],
+        "positive_since_close": ["AAA"],
+        "moved_up_since_open": ["AAA"],
+        "topd_moved_up_since_open": ["AAA"],
+    }
+    counts = metrics.breadth_summary(rows, 3)
+    for key, symbols in members.items():
+        assert counts[key] == len(symbols)
+    assert metrics.scan_members(rows, topd_min_rvol=1.21)["topd_moved_up_since_open"] == []
+
+
 def test_breadth_summary_thresholds_inclusive():
     rows = [
         {"price": 102, "open": 100, "prev_close": 99, "pct_from_open": 2.0, "rvol": 1.2},
