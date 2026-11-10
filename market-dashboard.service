@@ -1,0 +1,23 @@
+[Unit]
+Description=Market dashboard (Schwab breadth screener)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=market-dashboard
+Group=market-dashboard
+WorkingDirectory=/opt/market-dashboard
+EnvironmentFile=/opt/market-dashboard/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/market-dashboard/.venv/bin/python /opt/market-dashboard/backend.py
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
