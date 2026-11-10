@@ -25,7 +25,7 @@ Demo mode always refreshes every 5 seconds. Two demo-only variables help preview
 
 ## Schwab setup
 
-1. Create an app at [developer.schwab.com](https://developer.schwab.com) with the Market Data product. Set its callback URL, for example `https://127.0.0.1:8182`.
+1. Create an app at [developer.schwab.com](https://developer.schwab.com). Under API products, enable both **Accounts and Trading Production** and **Market Data Production**. Market Data alone can quote, and Send then returns 401. Set the callback URL, for example `https://127.0.0.1:8182`. Wait until the app status is **Ready For Use**. `Approved - Pending` is not usable. Adding a product later sends the app back through that wait.
 2. Export the credentials:
 
    ```bash
@@ -35,7 +35,7 @@ Demo mode always refreshes every 5 seconds. Two demo-only variables help preview
    # optional: export SCHWAB_TOKEN_PATH=/path/to/token.json  (default ./token.json)
    ```
 
-3. `python backend.py login` once. It opens the Schwab login in your browser and listens on the callback URL. After you sign in and approve, the browser warns about a self-signed certificate on `127.0.0.1:8182`; click Advanced → Proceed and the token is captured. The token is written to `token.json` (git-ignored). On a machine without a browser, use `python backend.py login --manual` and paste the redirected URL back.
+3. `python backend.py login` once. It opens the Schwab login in your browser and listens on the callback URL. The login asks for the products enabled on the app. schwab-py does not send a scope, and Schwab will not grant Accounts and Trading from a scope parameter. After you sign in and approve, the browser warns about a self-signed certificate on `127.0.0.1:8182`; click Advanced → Proceed and the token is captured. The token is written to `token.json` (git-ignored). On a machine without a browser, use `python backend.py login --manual` and paste the redirected URL back. If you add Accounts and Trading Production after the first login, delete that token and run `login` again. A refresh keeps the old grant.
 4. `python backend.py`. With `SCHWAB_APP_KEY` set the server uses Schwab; without it, demo data. `SCREENER_MODE=schwab|demo` forces either.
 
 The refresh token expires 7 days after `login`. The login time comes from `creation_timestamp` in the token file, which schwab-py keeps when it refreshes the access token. Run `login` again when the banner appears.
@@ -89,7 +89,7 @@ Review opens a details page and reads a quote. It does not look up the account a
 | AM | `DAY` | `AM` |
 | PM | `DAY` | `PM` |
 
-The order is a single equity leg (`BUY` or `SELL`), `MARKET`, `LIMIT`, or `STOP`. Placing it needs Accounts and Trading on the Schwab app. If the token is market-data only, the account lookup returns 401 and the page shows Schwab's error. A missing account scope is not reported as a bad ticker.
+The order is a single equity leg (`BUY` or `SELL`), `MARKET`, `LIMIT`, or `STOP`. Placing it needs **Accounts and Trading Production** on the Schwab app, in addition to **Market Data Production**. If the token is market-data only, the account lookup returns 401 and the page shows Schwab's error plus those product names. Log in again after enabling the product. A missing account product is not reported as a bad ticker.
 
 **Alerts.** Send, fill, and errors show an in-app popup. The same text is emailed when `ORDER_ALERT_EMAIL` and `SMTP_HOST` are set. With the address set and SMTP unset, the server logs the email instead of sending it. `ORDER_ALERT_PHONE` is an SMS placeholder: the server logs the message and does not contact a carrier. Leave both unset to skip them.
 

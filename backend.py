@@ -437,6 +437,11 @@ def login(manual: bool = False) -> None:
         os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182"),
         path,
     )
+    print(
+        "This login grants the API products enabled on the app at developer.schwab.com. "
+        "Quotes need Market Data Production. Send needs Accounts and Trading Production as well. "
+        "Wait until the app is Ready For Use. A token refresh cannot add a product, so this login replaces the token."
+    )
     if manual:
         auth.client_from_manual_flow(*args)
     else:

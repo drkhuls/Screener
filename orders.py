@@ -197,7 +197,12 @@ def _check(response: Any, what: str) -> None:
         return
     detail = schwab_detail(response)
     if status == 401:
-        message = "Schwab accounts returned 401. This token cannot read accounts."
+        message = (
+            "Schwab accounts returned 401. This token cannot read accounts. "
+            "On developer.schwab.com enable Accounts and Trading Production on the app "
+            "(keep Market Data Production), wait until the app is Ready For Use, and log in again. "
+            "Refreshing this token will not add it."
+        )
         if detail:
             message = f"{message} {detail}"
         raise OrderError(message)

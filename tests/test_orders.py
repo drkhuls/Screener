@@ -77,6 +77,7 @@ def test_account_401_surfaces_the_schwab_error():
         read_account(Client())
     message = str(caught.value)
     assert "insufficient_scope" in message
+    assert "Accounts and Trading Production" in message
     assert "Not a stock or ETF" not in message
 
 
