@@ -4,7 +4,8 @@ Live breadth monitor, screener, and daily chart for a custom ticker universe, on
 
 - **Top Scans**: my universe, gapped-up, +ve since last close, moved up since open, and topd moved up since open. Each bar is count / universe. Click a scan to filter the table to those tickers; click it again, click my universe, or Show all to clear.
 - **Watchlist**: upload a txt or csv and Replace or Merge it into `universe.json`. A `ticker,group` header keeps groups; a flat symbol list is enough. The box under the table adds one ticker.
-- **Table**: Ticker, Price, % From Open, % Day, Volume, 20D RVOL, Paced RVOL. Click a header once for descending, again for ascending. The sort and the charted ticker survive the refresh.
+- **Table**: Ticker, Price, % From Open, % Day, Volume, 20D RVOL. Twenty tickers per page, with page numbers when a scan or the universe has more. Click a header once for descending, again for ascending. The sort, the scan filter, and the charted ticker survive a page change.
+- **Order entry**: a collapsible panel under the table. Type or dictate an order, pick a risk preset, review the summary, then Confirm. Nothing is sent before Confirm. Demo mode shows the same panel and dialog and does not place an order.
 - **Refresh**: every 5 seconds during 9:30–16:00 ET on trading days; every 5 minutes otherwise (pre-market, after hours, weekends, holidays), so extended-hours prices still show up. The header badge shows the session and the current cadence.
 - **Token reminder**: a header badge counts down to the Schwab refresh-token expiry (7 days after `login`). From 2 days out a yellow banner appears; on the last day it turns red. The server logs a warning on each level change and hourly after that, and `meta.token` in `/api/screener-data` has `level`, `login_at`, `expires_at`, `seconds_left`.
 - **Chart**: daily candles, volume, and four moving averages (10 EMA red, 20 EMA blue, 50 SMA green, 200 SMA grey). Click an average to show or hide it, edit its period, or switch EMA/SMA. Dark mode toggles the chart background. B&W draws hollow up candles and filled down candles.
@@ -20,7 +21,7 @@ SCREENER_MODE=demo python backend.py     # fake data, no Schwab account needed
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-Demo mode always refreshes every 5 seconds. Two demo-only variables help preview the UI: `SCREENER_DEMO_TIME=11:30` pins the time of day (so Paced RVOL shows a mid-session value), and `SCREENER_DEMO_TOKEN_AGE_HOURS=126` simulates a login 126 hours ago (so the expiry banner shows).
+Demo mode always refreshes every 5 seconds. Two demo-only variables help preview the UI: `SCREENER_DEMO_TIME=11:30` pins the time of day, and `SCREENER_DEMO_TOKEN_AGE_HOURS=126` simulates a login 126 hours ago (so the expiry banner shows).
 
 ## Schwab setup
 
@@ -66,9 +67,30 @@ Edit `universe.json`. Groups are labels shown next to each ticker; the screener 
 - `pct_from_open = (price - open) / open * 100`
 - `pct_from_close = (price - prev_close) / prev_close * 100`, where `prev_close` is the quote's `closePrice`, or the last completed daily bar if that is missing
 - `rvol = volume / avg_volume_20d`, with the average over the last 20 completed sessions (20D RVOL column).
-- `rvol_pace = volume / (avg_volume_20d * share of the 9:30–16:00 session elapsed)` (Paced RVOL column). Blank before the open; equal to `rvol` after the close.
 - Outside the regular session Schwab's `quote.lastPrice` stays at the 16:00 print, so Price uses `extended.lastPrice` when its trade is newer (shown in purple; hover for the regular close). `prev_close` stays the prior session's `closePrice`, so % Day after hours is the extended price against yesterday's close. The chart's daily bar keeps the regular-session close.
 - Fields whose inputs are missing or zero (for example open before 9:30) show `—` and are not counted.
+
+## Order entry
+
+The panel sits under the screener table. Presets are 0.25%, 0.33%, 0.5%, and 1%. **0.5% is selected by default.** A percent in the instruction (for example `with 1% stop`) overrides the button. The mic button uses the browser Speech Recognition API.
+
+Review parses the text and opens a confirmation dialog. That step reads the account equity and the quote. It does not call Schwab `place_order`. Confirm is the only action that can send. Cancel sends nothing. In demo mode Confirm describes the order and does not call Schwab; demo equity is a fixed $250,000.
+
+**Default order.** A ticker on its own, or `buy NVDA` with no share count, is a **buy**, **market**, **stop-market at the low of day**. The share count is
+
+```
+floor(account_equity × risk% / (last − low_of_day))
+```
+
+using the last price read when Confirm is accepted. With the default 0.5% risk the budget is `equity × 0.005`. On the demo account that is $1,250. If NVDA's last is $140 and the low of day is $135, the distance is $5 and the order is **250 shares**. If the last is at or below the low, the distance is zero and the order is rejected before any division.
+
+If the live quote at Confirm changes the share count, the stop, or the equity in the dialog, the dialog updates and nothing is sent until that new sentence is confirmed.
+
+Sells are sell-short with a buy-to-cover stop-market. Buys and sells may be market or limit. Every stop is stop-market. Stocks and ETFs only: options and futures are rejected.
+
+**Schwab order path.** Confirm sends one `place_order` of a TRIGGER order built with `schwab.orders.common.first_triggers_second`. The entry is the parent and the child is a stop-market (`OrderType.STOP`). Session is `NORMAL`, duration `DAY`. Equity is `currentBalances.equity` on the first linked account, or `liquidationValue` when equity is missing. Placing orders needs Accounts and Trading on the Schwab app, not only Market Data.
+
+**Alerts.** Submit, stop fill, and errors show an in-app popup and a browser notification. The same text is emailed when `ORDER_ALERT_EMAIL` and `SMTP_HOST` are set. With the address set and SMTP unset, the server logs the email instead of sending it. `ORDER_ALERT_PHONE` is an SMS placeholder: the server logs the message and does not contact a carrier. Leave both unset to skip them.
 
 ## Tests
 

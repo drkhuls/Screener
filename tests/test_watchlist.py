@@ -71,7 +71,9 @@ def test_page_has_upload_scan_filter_and_chart_controls(demo_client):
     assert 'id="bw"' in html and ">B&amp;W<" in html
     assert ">Dark mode<" in html and "Dark chart" not in html
     assert 'class="ma-type"' in html and "Show or hide" in html
-    assert "order-entry" not in html
+    assert 'id="order-entry"' in html and 'id="order-confirm"' in html and 'id="order-mic"' in html
+    assert 'id="pager"' in html and "PAGE_SIZE = 20" in html
+    assert "Paced RVOL" not in html and "rvol_pace" not in html
 
 
 def test_upload_replaces_or_merges_and_add_keeps_groups(demo_client, tmp_path, monkeypatch):

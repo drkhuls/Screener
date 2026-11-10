@@ -53,6 +53,7 @@
   .scan.total .bar > i { background: #c8c8c8; }
 
   /* Section B: table */
+  #table-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .table-wrap { overflow: auto; min-height: 0; flex: 1; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { padding: 5px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid #222; }
@@ -85,6 +86,35 @@
   button { background: #2a2a2a; color: var(--text); border: 1px solid #444; padding: 3px 10px; border-radius: 3px; cursor: pointer; font: inherit; }
   .chart-actions { margin-left: auto; display: flex; gap: 8px; }
   #bw[aria-pressed="true"] { background: #3a3a3a; border-color: #c8c8c8; color: #fff; }
+  .pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border-top: 1px solid var(--line); }
+  .pager[hidden] { display: none; }
+  .pager button.selected { background: #3a3a3a; border-color: #c8c8c8; color: #fff; }
+  #order-entry { flex: 0 0 auto; }
+  .order-toggle { display: block; width: 100%; text-align: left; background: #202020; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-weight: 600; padding: 5px 8px; }
+  .risk-row { display: flex; gap: 8px; padding: 8px 8px 6px; }
+  .risk-row button { min-width: 58px; background: #111; border: 1px solid #6a6a6a; color: #ddd; }
+  .risk-row button.selected { background: #3a3a3a; color: #fff; border-color: #c8c8c8; font-weight: 600; }
+  #order-form { display: flex; gap: 8px; align-items: stretch; padding: 0 8px; }
+  .order-field { flex: 1; display: flex; align-items: center; background: #0b0b0b; border: 1px solid #555; border-radius: 4px; padding: 0 2px 0 8px; }
+  .order-field:focus-within { border-color: #888; }
+  #order-text { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--text); padding: 8px 0; font: inherit; }
+  #order-text:focus { outline: none; }
+  #order-mic { border: 0; background: transparent; color: #ccc; padding: 6px 8px; }
+  #order-mic.listening { color: #ff8a80; }
+  #order-review { align-self: stretch; }
+  .order-hint { margin: 0; padding: 6px 8px 8px; color: var(--muted); font-size: 11px; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 20; }
+  .modal[hidden] { display: none; }
+  .modal-card { width: min(460px, calc(100% - 32px)); background: #1b1b1b; border: 1px solid #444; padding: 16px; }
+  .modal-card:focus { outline: none; }
+  #order-summary { margin: 0 0 8px; line-height: 1.45; }
+  .order-note { margin: 0 0 14px; color: #ffd666; font-size: 12px; min-height: 0; }
+  .order-note:empty { display: none; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  #order-confirm { background: #0f3d36; border-color: #1d6b5e; color: #d8fff6; }
+  #toasts { position: fixed; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; z-index: 30; max-width: min(380px, calc(100% - 28px)); }
+  .toast { background: #202020; border: 1px solid #444; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.45); cursor: pointer; line-height: 1.4; }
+  .toast.error { border-color: #ef5350; }
   #chart { flex: 1; min-height: 360px; position: relative; }
   #chart-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; z-index: 2; }
 
@@ -121,17 +151,41 @@
       </div>
       <div id="scan-rows"></div>
     </section>
-    <section class="box table-wrap">
-      <table>
-        <thead><tr id="head"></tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
+    <section class="box" id="table-panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr id="head"></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="pager" class="pager" hidden></div>
     </section>
     <form id="add-ticker" class="box add-ticker">
       <input id="add-symbol" type="text" maxlength="12" placeholder="Add ticker" autocomplete="off" spellcheck="false" aria-label="Add ticker">
       <button type="submit">Add</button>
       <span id="add-note" class="watch-note"></span>
     </form>
+    <section class="box" id="order-entry">
+      <button type="button" class="order-toggle" id="order-toggle" aria-expanded="true" aria-controls="order-body">Order Entry ▾</button>
+      <div id="order-body">
+        <div class="risk-row" role="group" aria-label="Equity risk">
+          <button type="button" data-risk="0.25">0.25%</button>
+          <button type="button" data-risk="0.33">0.33%</button>
+          <button type="button" data-risk="0.5" class="selected" aria-pressed="true">0.5%</button>
+          <button type="button" data-risk="1" aria-pressed="false">1%</button>
+        </div>
+        <form id="order-form">
+          <div class="order-field">
+            <input id="order-text" type="text" placeholder="buy NVDA" autocomplete="off" spellcheck="false" aria-label="Order instruction">
+            <button type="button" id="order-mic" aria-label="Dictate order" title="Dictate">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+            </button>
+          </div>
+          <button type="submit" id="order-review">Review</button>
+        </form>
+        <p class="order-hint">Default is a market buy, stop-market at the low of day. Shares = equity × risk ÷ (last − low), using the last price when you confirm. Nothing is sent until Confirm.</p>
+      </div>
+    </section>
   </div>
   <section class="box chart-box">
     <div class="chart-head">
@@ -146,8 +200,20 @@
     <div id="chart"><div id="chart-msg">Click a row to chart it</div></div>
   </section>
 </main>
+<div id="order-modal" class="modal" hidden>
+  <div class="modal-card" id="order-card" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="order-summary">
+    <p id="order-summary"></p>
+    <p id="order-note" class="order-note"></p>
+    <div class="modal-actions">
+      <button type="button" id="order-cancel">Cancel</button>
+      <button type="button" id="order-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+<div id="toasts"></div>
 <script>
 const POLL_MS = 5000;
+const PAGE_SIZE = 20;
 const SCANS = [
   ["universe_count", "my universe", true],
   ["gapped_up", "gapped-up"],
@@ -162,7 +228,6 @@ const COLUMNS = [
   { key: "pct_from_close", label: "% Day" },
   { key: "volume", label: "Volume" },
   { key: "rvol", label: "20D RVOL" },
-  { key: "rvol_pace", label: "Paced RVOL", title: "volume / (20-day avg volume × share of session elapsed)" },
 ];
 const SESSION_LABELS = { regular: "Market open", pre: "Pre-market", post: "After hours", closed: "Market closed" };
 const THEMES = {
@@ -198,6 +263,7 @@ function loadMas() {
 
 const state = {
   sort: JSON.parse(localStorage.getItem("screener.sort") || "null") || { key: "pct_from_close", dir: "desc" },
+  page: 1,
   selected: localStorage.getItem("screener.symbol"),
   theme: localStorage.getItem("screener.theme") || "light",
   bw: localStorage.getItem("screener.bw") === "1",
@@ -207,6 +273,9 @@ const state = {
   chartBars: null,
   chartVolume: null,
 };
+if (!COLUMNS.some((column) => column.key === state.sort.key)) {
+  state.sort = { key: "pct_from_close", dir: "desc" };
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -237,7 +306,9 @@ function renderScans(summary) {
 }
 
 function setScan(key) {
-  state.scan = key && state.scan !== key ? key : null;
+  const next = key && state.scan !== key ? key : null;
+  if (next !== state.scan) state.page = 1;
+  state.scan = next;
   if (!state.data) return;
   renderScans(state.data.summary);
   renderTable();
@@ -268,10 +339,43 @@ function visibleStocks(stocks) {
   return stocks.filter((s) => members.has(s.symbol));
 }
 
+function listedStocks(stocks) {
+  return sortedStocks(visibleStocks(stocks));
+}
+
+function pageOf(stocks) {
+  const listed = listedStocks(stocks);
+  const pages = Math.max(1, Math.ceil(listed.length / PAGE_SIZE));
+  if (state.page > pages) state.page = pages;
+  if (state.page < 1) state.page = 1;
+  const start = (state.page - 1) * PAGE_SIZE;
+  return { rows: listed.slice(start, start + PAGE_SIZE), total: listed.length, pages };
+}
+
+function renderPager(pages) {
+  const pager = $("pager");
+  if (pages <= 1) {
+    pager.hidden = true;
+    pager.innerHTML = "";
+    return;
+  }
+  pager.hidden = false;
+  const numbers = [];
+  for (let page = 1; page <= pages; page++) {
+    const current = page === state.page;
+    numbers.push(`<button type="button" class="page${current ? " selected" : ""}" data-page="${page}" aria-current="${current ? "page" : "false"}">${page}</button>`);
+  }
+  pager.innerHTML = `
+    <button type="button" data-page="prev"${state.page === 1 ? " disabled" : ""}>Prev</button>
+    ${numbers.join("")}
+    <button type="button" data-page="next"${state.page === pages ? " disabled" : ""}>Next</button>`;
+}
+
 function renderTable() {
   const { stocks, meta } = state.data;
   const hotRvol = meta.thresholds.topd_min_rvol;
-  $("rows").innerHTML = sortedStocks(visibleStocks(stocks)).map((s) => `
+  const page = pageOf(stocks);
+  $("rows").innerHTML = page.rows.map((s) => `
     <tr data-symbol="${s.symbol}" class="${s.symbol === state.selected ? "selected" : ""}">
       <td class="sym">${s.symbol}${s.group ? `<small>${s.group}</small>` : ""}</td>
       <td${s.extended_hours ? ` class="ext" title="Extended-hours trade · regular close ${fmtPrice(s.regular_price)}"` : ""}>${fmtPrice(s.price)}</td>
@@ -279,8 +383,8 @@ function renderTable() {
       <td class="${signClass(s.pct_from_close)}">${fmtPct(s.pct_from_close)}</td>
       <td>${fmtVolume(s.volume)}</td>
       <td class="${s.rvol != null && s.rvol >= hotRvol ? "hot" : ""}">${fmtRatio(s.rvol)}</td>
-      <td class="${s.rvol_pace != null && s.rvol_pace >= hotRvol ? "hot" : ""}">${fmtRatio(s.rvol_pace)}</td>
     </tr>`).join("");
+  renderPager(page.pages);
 }
 
 function fmtLeft(seconds) {
@@ -339,9 +443,12 @@ async function loadScreener() {
   renderStatus();
   updateLiveBar();
   if (!state.selected && state.data.stocks.length) {
-    state.selected = sortedStocks(visibleStocks(state.data.stocks))[0].symbol;
-    renderTable();
-    loadChart(state.selected);
+    const listed = listedStocks(state.data.stocks);
+    if (listed.length) {
+      state.selected = listed[0].symbol;
+      renderTable();
+      loadChart(state.selected);
+    }
   }
 }
 
@@ -418,6 +525,16 @@ $("scan-rows").addEventListener("click", (e) => {
   setScan(row.dataset.scan || null);
 });
 $("scan-clear").addEventListener("click", () => setScan(null));
+$("pager").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button || button.disabled || !state.data) return;
+  const pages = pageOf(state.data.stocks).pages;
+  const choice = button.dataset.page;
+  if (choice === "prev") state.page = Math.max(1, state.page - 1);
+  else if (choice === "next") state.page = Math.min(pages, state.page + 1);
+  else state.page = Number(choice);
+  renderTable();
+});
 
 $("rows").addEventListener("click", (e) => {
   const tr = e.target.closest("tr");
@@ -616,6 +733,173 @@ chart.subscribeCrosshairMove((param) => {
 
 if (state.selected) loadChart(state.selected);
 poll();
+
+/* Order entry. Review parses a preview; Confirm is the only call that can send. */
+const orderState = { risk: 0.5, previewId: null, recognition: null, busy: false };
+
+function orderErrorText(data) {
+  if (!data) return "Order failed";
+  if (typeof data.detail === "string") return data.detail;
+  if (Array.isArray(data.detail)) return data.detail.map((item) => item.msg || String(item)).join(" ");
+  return "Order failed";
+}
+
+function browserNotify(message) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try { new Notification("Screener order", { body: message }); } catch (err) { /* the in-app toast still shows */ }
+}
+
+function ensureNotify() {
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+}
+
+function popup(kind, message) {
+  const el = document.createElement("div");
+  el.className = "toast" + (kind === "error" ? " error" : "");
+  el.textContent = message;
+  el.title = "Click to dismiss";
+  el.addEventListener("click", () => el.remove());
+  $("toasts").appendChild(el);
+  browserNotify(message);
+  if (kind === "submit") setTimeout(() => el.remove(), 12000);
+}
+
+function closeModal() {
+  $("order-modal").hidden = true;
+  orderState.previewId = null;
+  $("order-note").textContent = "";
+}
+
+function openModal(data, note) {
+  orderState.previewId = data.preview_id;
+  $("order-summary").textContent = data.summary;
+  $("order-note").textContent = note || "";
+  $("order-confirm").disabled = false;
+  $("order-modal").hidden = false;
+  $("order-card").focus();
+}
+
+$("order-toggle").addEventListener("click", () => {
+  const body = $("order-body");
+  body.hidden = !body.hidden;
+  const open = !body.hidden;
+  $("order-toggle").setAttribute("aria-expanded", String(open));
+  $("order-toggle").textContent = "Order Entry " + (open ? "▾" : "▸");
+});
+
+document.querySelectorAll(".risk-row button").forEach((button) => {
+  button.addEventListener("click", () => {
+    orderState.risk = Number(button.dataset.risk);
+    document.querySelectorAll(".risk-row button").forEach((other) => {
+      const on = other === button;
+      other.classList.toggle("selected", on);
+      other.setAttribute("aria-pressed", String(on));
+    });
+  });
+});
+
+$("order-mic").addEventListener("click", () => {
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Rec) {
+    popup("error", "This browser has no speech recognition");
+    return;
+  }
+  ensureNotify();
+  if (orderState.recognition) {
+    orderState.recognition.stop();
+    return;
+  }
+  const rec = new Rec();
+  rec.lang = "en-US";
+  rec.interimResults = true;
+  rec.onresult = (event) => {
+    let text = "";
+    for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript;
+    $("order-text").value = text;
+  };
+  rec.onerror = (event) => popup("error", "Microphone: " + (event.error || "failed"));
+  rec.onend = () => {
+    orderState.recognition = null;
+    $("order-mic").classList.remove("listening");
+  };
+  orderState.recognition = rec;
+  $("order-mic").classList.add("listening");
+  try { rec.start(); } catch (err) { popup("error", "Microphone: " + err.message); }
+});
+
+$("order-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (orderState.busy) return;
+  if (orderState.recognition) orderState.recognition.stop();
+  ensureNotify();
+  orderState.busy = true;
+  $("order-review").disabled = true;
+  try {
+    const res = await fetch("/api/orders/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction: $("order-text").value, risk_pct: orderState.risk }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      popup("error", orderErrorText(data));
+      return;
+    }
+    openModal(data);
+  } catch (err) {
+    popup("error", "Order preview failed");
+  } finally {
+    orderState.busy = false;
+    $("order-review").disabled = false;
+  }
+});
+
+$("order-cancel").addEventListener("click", closeModal);
+$("order-modal").addEventListener("click", (event) => {
+  if (event.target.id === "order-modal") closeModal();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("order-modal").hidden) closeModal();
+});
+
+$("order-confirm").addEventListener("click", async () => {
+  if (!orderState.previewId || $("order-confirm").disabled) return;
+  $("order-confirm").disabled = true;
+  try {
+    const res = await fetch("/api/orders/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preview_id: orderState.previewId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      popup("error", orderErrorText(data));
+      $("order-confirm").disabled = false;
+      return;
+    }
+    if (data.repriced) {
+      openModal(data, "Price moved. This is the order that will be sent.");
+      return;
+    }
+    closeModal();
+    if (data.alert) popup(data.alert.kind, data.alert.message);
+  } catch (err) {
+    popup("error", "Order confirm failed");
+    $("order-confirm").disabled = false;
+  }
+});
+
+async function pollAlerts() {
+  try {
+    const res = await fetch("/api/orders/alerts", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      for (const alert of data.alerts || []) popup(alert.kind, alert.message);
+    }
+  } catch (err) { /* the next poll retries */ }
+  setTimeout(pollAlerts, 5000);
+}
+pollAlerts();
 </script>
 </body>
 </html>
