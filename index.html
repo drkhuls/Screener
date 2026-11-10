@@ -91,27 +91,40 @@
   .pager button.selected { background: #3a3a3a; border-color: #c8c8c8; color: #fff; }
   #order-entry { flex: 0 0 auto; }
   .order-toggle { display: block; width: 100%; text-align: left; background: #202020; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-weight: 600; padding: 5px 8px; }
-  .risk-row { display: flex; gap: 8px; padding: 8px 8px 6px; }
-  .risk-row button { min-width: 58px; background: #111; border: 1px solid #6a6a6a; color: #ddd; }
-  .risk-row button.selected { background: #3a3a3a; color: #fff; border-color: #c8c8c8; font-weight: 600; }
-  #order-form { display: flex; gap: 8px; align-items: stretch; padding: 0 8px; }
-  .order-field { flex: 1; display: flex; align-items: center; background: #0b0b0b; border: 1px solid #555; border-radius: 4px; padding: 0 2px 0 8px; }
-  .order-field:focus-within { border-color: #888; }
-  #order-text { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--text); padding: 8px 0; font: inherit; }
-  #order-text:focus { outline: none; }
-  #order-mic { border: 0; background: transparent; color: #ccc; padding: 6px 8px; }
-  #order-mic.listening { color: #ff8a80; }
-  #order-review { align-self: stretch; }
-  .order-hint { margin: 0; padding: 6px 8px 8px; color: var(--muted); font-size: 11px; }
-  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 20; }
-  .modal[hidden] { display: none; }
-  .modal-card { width: min(460px, calc(100% - 32px)); background: #1b1b1b; border: 1px solid #444; padding: 16px; }
-  .modal-card:focus { outline: none; }
-  #order-summary { margin: 0 0 8px; line-height: 1.45; }
+  .order-row { display: flex; gap: 8px; align-items: center; padding: 8px; }
+  .order-row + .order-row { padding-top: 0; }
+  #order-side { min-width: 72px; font-weight: 700; border-color: transparent; }
+  #order-side.buy { background: #0f7a45; color: #fff; }
+  #order-side.sell { background: #b42318; color: #fff; }
+  .menu { position: relative; }
+  .menu > button { min-width: 88px; text-align: left; }
+  .menu-list { position: absolute; z-index: 15; top: calc(100% + 4px); left: 0; min-width: 220px; margin: 0; padding: 6px 0; list-style: none; background: #1b1b1b; border: 1px solid #555; box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+  .menu-list[hidden] { display: none; }
+  .menu-list button { display: flex; width: 100%; justify-content: space-between; gap: 12px; text-align: left; background: transparent; border: 0; border-radius: 0; padding: 7px 12px; }
+  .menu-list button small { display: block; color: var(--muted); font-size: 11px; }
+  .menu-list button .check { color: #5fd3c3; visibility: hidden; }
+  .menu-list button[aria-selected="true"] .check { visibility: visible; }
+  .menu-list button:hover { background: #2a2a2a; }
+  .shares { display: flex; align-items: center; margin-left: auto; background: #0b0b0b; border: 1px solid #555; border-radius: 4px; }
+  .shares button { border: 0; background: transparent; min-width: 32px; padding: 6px; }
+  #order-shares { width: 64px; background: transparent; border: 0; color: var(--text); text-align: center; font: inherit; padding: 6px 0; }
+  #order-shares:focus { outline: none; }
+  #order-price-row[hidden] { display: none; }
+  #order-price-label { min-width: 48px; color: var(--muted); }
+  #order-price, #order-symbol { flex: 1; min-width: 0; background: #0b0b0b; color: var(--text); border: 1px solid #555; border-radius: 4px; padding: 7px 8px; font: inherit; }
+  #order-price:focus, #order-symbol:focus { outline: none; border-color: #888; }
+  #order-form { padding-top: 0; }
+  .order-hint { margin: 0; padding: 0 8px 8px; color: var(--muted); font-size: 11px; }
+  .order-page { position: fixed; inset: 0; background: rgba(0,0,0,.62); display: flex; align-items: center; justify-content: center; z-index: 20; }
+  .order-page[hidden] { display: none; }
+  .order-page-card { width: min(520px, calc(100% - 32px)); background: #1b1b1b; border: 1px solid #444; padding: 18px; }
+  .order-page-card h2 { margin: 0 0 10px; font-size: 16px; }
+  #order-summary { margin: 0 0 8px; line-height: 1.5; }
   .order-note { margin: 0 0 14px; color: #ffd666; font-size: 12px; min-height: 0; }
   .order-note:empty { display: none; }
-  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-  #order-confirm { background: #0f3d36; border-color: #1d6b5e; color: #d8fff6; }
+  .order-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  #order-send.buy { background: #0f7a45; border-color: #0f7a45; color: #fff; }
+  #order-send.sell { background: #b42318; border-color: #b42318; color: #fff; }
   #toasts { position: fixed; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; z-index: 30; max-width: min(380px, calc(100% - 28px)); }
   .toast { background: #202020; border: 1px solid #444; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.45); cursor: pointer; line-height: 1.4; }
   .toast.error { border-color: #ef5350; }
@@ -168,22 +181,31 @@
     <section class="box" id="order-entry">
       <button type="button" class="order-toggle" id="order-toggle" aria-expanded="true" aria-controls="order-body">Order Entry ▾</button>
       <div id="order-body">
-        <div class="risk-row" role="group" aria-label="Equity risk">
-          <button type="button" data-risk="0.25">0.25%</button>
-          <button type="button" data-risk="0.33">0.33%</button>
-          <button type="button" data-risk="0.5" class="selected" aria-pressed="true">0.5%</button>
-          <button type="button" data-risk="1" aria-pressed="false">1%</button>
-        </div>
-        <form id="order-form">
-          <div class="order-field">
-            <input id="order-text" type="text" placeholder="buy NVDA" autocomplete="off" spellcheck="false" aria-label="Order instruction">
-            <button type="button" id="order-mic" aria-label="Dictate order" title="Dictate">
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
-            </button>
+        <div class="order-row">
+          <button type="button" id="order-side" class="buy" aria-pressed="false">Buy</button>
+          <div class="menu">
+            <button type="button" id="order-type" aria-haspopup="listbox" aria-expanded="false">Market</button>
+            <ul id="order-type-menu" class="menu-list" role="listbox" hidden></ul>
           </div>
+          <div class="menu">
+            <button type="button" id="order-tif" aria-haspopup="listbox" aria-expanded="false">Day</button>
+            <ul id="order-tif-menu" class="menu-list" role="listbox" hidden></ul>
+          </div>
+          <div class="shares">
+            <button type="button" id="shares-down" aria-label="Decrease shares by 10">−</button>
+            <input id="order-shares" type="number" min="1" step="10" value="100" aria-label="Shares">
+            <button type="button" id="shares-up" aria-label="Increase shares by 10">+</button>
+          </div>
+        </div>
+        <div class="order-row" id="order-price-row" hidden>
+          <span id="order-price-label">Limit</span>
+          <input id="order-price" inputmode="decimal" placeholder="Price" autocomplete="off" aria-label="Price">
+        </div>
+        <form id="order-form" class="order-row">
+          <input id="order-symbol" type="text" maxlength="12" placeholder="Ticker" autocomplete="off" spellcheck="false" aria-label="Ticker">
           <button type="submit" id="order-review">Review</button>
         </form>
-        <p class="order-hint">Default is a market buy, stop-market at the low of day. Shares = equity × risk ÷ (last − low), using the last price when you confirm. Nothing is sent until Confirm.</p>
+        <p class="order-hint">Ticker only. Review opens the details. Nothing is sent until Send.</p>
       </div>
     </section>
   </div>
@@ -200,13 +222,14 @@
     <div id="chart"><div id="chart-msg">Click a row to chart it</div></div>
   </section>
 </main>
-<div id="order-modal" class="modal" hidden>
-  <div class="modal-card" id="order-card" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="order-summary">
+<div id="order-page" class="order-page" hidden>
+  <div class="order-page-card" id="order-card" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="order-page-title">
+    <h2 id="order-page-title">Order details</h2>
     <p id="order-summary"></p>
     <p id="order-note" class="order-note"></p>
-    <div class="modal-actions">
+    <div class="order-actions">
       <button type="button" id="order-cancel">Cancel</button>
-      <button type="button" id="order-confirm">Confirm</button>
+      <button type="button" id="order-send" class="buy">Send</button>
     </div>
   </div>
 </div>
@@ -734,23 +757,29 @@ chart.subscribeCrosshairMove((param) => {
 if (state.selected) loadChart(state.selected);
 poll();
 
-/* Order entry. Review parses a preview; Confirm is the only call that can send. */
-const orderState = { risk: 0.5, previewId: null, recognition: null, busy: false };
+/* Order entry. Review opens the details page. Send is the only call that can reach Schwab. */
+const ORDER_TYPES = [
+  ["market", "Market"],
+  ["limit", "Limit"],
+  ["stop", "Stop"],
+];
+const TIF = [
+  ["day", "Day", ""],
+  ["gtc", "GTC", "Good Till Canceled"],
+  ["ext", "EXT", "Extended"],
+  ["gtc_ext", "GTC EXT", "Good Till Canceled Extended"],
+  ["exto", "EXTO", "Extended Hours Overnight"],
+  ["gtc_exto", "GTC EXTO", "Good Till Canceled Extended Hours Overnight"],
+  ["am", "AM", ""],
+  ["pm", "PM", ""],
+];
+const orderState = { side: "buy", orderType: "market", tif: "day", previewId: null, busy: false };
 
 function orderErrorText(data) {
   if (!data) return "Order failed";
   if (typeof data.detail === "string") return data.detail;
   if (Array.isArray(data.detail)) return data.detail.map((item) => item.msg || String(item)).join(" ");
   return "Order failed";
-}
-
-function browserNotify(message) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
-  try { new Notification("Screener order", { body: message }); } catch (err) { /* the in-app toast still shows */ }
-}
-
-function ensureNotify() {
-  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
 }
 
 function popup(kind, message) {
@@ -760,22 +789,57 @@ function popup(kind, message) {
   el.title = "Click to dismiss";
   el.addEventListener("click", () => el.remove());
   $("toasts").appendChild(el);
-  browserNotify(message);
   if (kind === "submit") setTimeout(() => el.remove(), 12000);
 }
 
-function closeModal() {
-  $("order-modal").hidden = true;
+function tifChoices() {
+  return orderState.orderType === "limit" ? TIF : TIF.filter(([key]) => key === "day");
+}
+
+function closeMenus() {
+  for (const id of ["order-type-menu", "order-tif-menu"]) {
+    $(id).hidden = true;
+    $(id === "order-type-menu" ? "order-type" : "order-tif").setAttribute("aria-expanded", "false");
+  }
+}
+
+function renderOrderMenus() {
+  const typeLabel = ORDER_TYPES.find(([key]) => key === orderState.orderType)[1];
+  $("order-type").textContent = typeLabel;
+  $("order-type-menu").innerHTML = ORDER_TYPES.map(([key, label]) => `
+    <li><button type="button" data-type="${key}" aria-selected="${key === orderState.orderType}">${label}<span class="check">✓</span></button></li>`).join("");
+  if (!tifChoices().some(([key]) => key === orderState.tif)) orderState.tif = "day";
+  const tif = TIF.find(([key]) => key === orderState.tif);
+  $("order-tif").textContent = tif[1];
+  $("order-tif-menu").innerHTML = tifChoices().map(([key, label, note]) => `
+    <li><button type="button" data-tif="${key}" aria-selected="${key === orderState.tif}"><span>${label}${note ? `<small>${note}</small>` : ""}</span><span class="check">✓</span></button></li>`).join("");
+  const priced = orderState.orderType !== "market";
+  $("order-price-row").hidden = !priced;
+  $("order-price-label").textContent = orderState.orderType === "stop" ? "Stop" : "Limit";
+  $("order-side").textContent = orderState.side === "buy" ? "Buy" : "Sell";
+  $("order-side").className = orderState.side;
+  $("order-side").setAttribute("aria-pressed", String(orderState.side === "sell"));
+}
+
+function stepShares(delta) {
+  const current = Math.round(Number($("order-shares").value));
+  const base = Number.isFinite(current) && current >= 1 ? current : 100;
+  $("order-shares").value = String(Math.max(1, base + delta));
+}
+
+function closeOrderPage() {
+  $("order-page").hidden = true;
   orderState.previewId = null;
   $("order-note").textContent = "";
 }
 
-function openModal(data, note) {
+function openOrderPage(data) {
   orderState.previewId = data.preview_id;
   $("order-summary").textContent = data.summary;
-  $("order-note").textContent = note || "";
-  $("order-confirm").disabled = false;
-  $("order-modal").hidden = false;
+  $("order-note").textContent = "";
+  $("order-send").disabled = false;
+  $("order-send").className = (data.plan && data.plan.side) || orderState.side;
+  $("order-page").hidden = false;
   $("order-card").focus();
 }
 
@@ -787,65 +851,74 @@ $("order-toggle").addEventListener("click", () => {
   $("order-toggle").textContent = "Order Entry " + (open ? "▾" : "▸");
 });
 
-document.querySelectorAll(".risk-row button").forEach((button) => {
-  button.addEventListener("click", () => {
-    orderState.risk = Number(button.dataset.risk);
-    document.querySelectorAll(".risk-row button").forEach((other) => {
-      const on = other === button;
-      other.classList.toggle("selected", on);
-      other.setAttribute("aria-pressed", String(on));
-    });
-  });
+$("order-side").addEventListener("click", () => {
+  orderState.side = orderState.side === "buy" ? "sell" : "buy";
+  renderOrderMenus();
 });
 
-$("order-mic").addEventListener("click", () => {
-  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Rec) {
-    popup("error", "This browser has no speech recognition");
-    return;
-  }
-  ensureNotify();
-  if (orderState.recognition) {
-    orderState.recognition.stop();
-    return;
-  }
-  const rec = new Rec();
-  rec.lang = "en-US";
-  rec.interimResults = true;
-  rec.onresult = (event) => {
-    let text = "";
-    for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript;
-    $("order-text").value = text;
-  };
-  rec.onerror = (event) => popup("error", "Microphone: " + (event.error || "failed"));
-  rec.onend = () => {
-    orderState.recognition = null;
-    $("order-mic").classList.remove("listening");
-  };
-  orderState.recognition = rec;
-  $("order-mic").classList.add("listening");
-  try { rec.start(); } catch (err) { popup("error", "Microphone: " + err.message); }
+$("order-type").addEventListener("click", () => {
+  const open = $("order-type-menu").hidden;
+  closeMenus();
+  $("order-type-menu").hidden = !open;
+  $("order-type").setAttribute("aria-expanded", String(open));
 });
+
+$("order-tif").addEventListener("click", () => {
+  const open = $("order-tif-menu").hidden;
+  closeMenus();
+  $("order-tif-menu").hidden = !open;
+  $("order-tif").setAttribute("aria-expanded", String(open));
+});
+
+$("order-type-menu").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-type]");
+  if (!button) return;
+  orderState.orderType = button.dataset.type;
+  closeMenus();
+  renderOrderMenus();
+});
+
+$("order-tif-menu").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-tif]");
+  if (!button) return;
+  orderState.tif = button.dataset.tif;
+  closeMenus();
+  renderOrderMenus();
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".menu")) closeMenus();
+});
+
+$("shares-down").addEventListener("click", () => stepShares(-10));
+$("shares-up").addEventListener("click", () => stepShares(10));
 
 $("order-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (orderState.busy) return;
-  if (orderState.recognition) orderState.recognition.stop();
-  ensureNotify();
+  closeMenus();
+  const priced = orderState.orderType !== "market";
   orderState.busy = true;
   $("order-review").disabled = true;
   try {
     const res = await fetch("/api/orders/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ instruction: $("order-text").value, risk_pct: orderState.risk }),
+      body: JSON.stringify({
+        side: orderState.side,
+        order_type: orderState.orderType,
+        tif: orderState.tif,
+        shares: Number($("order-shares").value),
+        symbol: $("order-symbol").value,
+        price: priced ? Number($("order-price").value) : null,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       popup("error", orderErrorText(data));
       return;
     }
-    openModal(data);
+    openOrderPage(data);
   } catch (err) {
     popup("error", "Order preview failed");
   } finally {
@@ -854,40 +927,35 @@ $("order-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("order-cancel").addEventListener("click", closeModal);
-$("order-modal").addEventListener("click", (event) => {
-  if (event.target.id === "order-modal") closeModal();
-});
+$("order-cancel").addEventListener("click", closeOrderPage);
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("order-modal").hidden) closeModal();
+  if (event.key === "Escape" && !$("order-page").hidden) closeOrderPage();
 });
 
-$("order-confirm").addEventListener("click", async () => {
-  if (!orderState.previewId || $("order-confirm").disabled) return;
-  $("order-confirm").disabled = true;
+$("order-send").addEventListener("click", async () => {
+  if (!orderState.previewId || $("order-send").disabled) return;
+  $("order-send").disabled = true;
   try {
-    const res = await fetch("/api/orders/confirm", {
+    const res = await fetch("/api/orders/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ preview_id: orderState.previewId }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      popup("error", orderErrorText(data));
-      $("order-confirm").disabled = false;
+      $("order-note").textContent = orderErrorText(data);
+      $("order-send").disabled = false;
       return;
     }
-    if (data.repriced) {
-      openModal(data, "Price moved. This is the order that will be sent.");
-      return;
-    }
-    closeModal();
+    closeOrderPage();
     if (data.alert) popup(data.alert.kind, data.alert.message);
   } catch (err) {
-    popup("error", "Order confirm failed");
-    $("order-confirm").disabled = false;
+    $("order-note").textContent = "Order send failed";
+    $("order-send").disabled = false;
   }
 });
+
+renderOrderMenus();
 
 async function pollAlerts() {
   try {

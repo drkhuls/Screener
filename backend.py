@@ -373,11 +373,15 @@ def add_universe_symbol(body: SymbolUpdate) -> dict[str, Any]:
 
 
 class PreviewRequest(BaseModel):
-    instruction: str = ""
-    risk_pct: float | None = 0.5
+    side: str = "buy"
+    order_type: str = "market"
+    tif: str = "day"
+    shares: Any = 100
+    symbol: str = ""
+    price: Any = None
 
 
-class ConfirmRequest(BaseModel):
+class SendRequest(BaseModel):
     preview_id: str
 
 
@@ -396,14 +400,14 @@ def _order_call(method, *args):
 
 @app.post("/api/orders/preview")
 def preview_order(body: PreviewRequest) -> dict[str, Any]:
-    """Parse and price an order. Does not call Schwab place_order."""
-    return _order_call(screener.orders.preview, body.instruction, body.risk_pct)
+    """Check the ticket and read a quote. Does not call Schwab place_order or the accounts API."""
+    return _order_call(screener.orders.preview, body.model_dump())
 
 
-@app.post("/api/orders/confirm")
-def confirm_order(body: ConfirmRequest) -> dict[str, Any]:
-    """Send the preview. Demo mode returns the order and does not call Schwab."""
-    return _order_call(screener.orders.confirm, body.preview_id)
+@app.post("/api/orders/send")
+def send_order(body: SendRequest) -> dict[str, Any]:
+    """Place the reviewed order. Demo mode returns it and does not call Schwab."""
+    return _order_call(screener.orders.send, body.preview_id)
 
 
 @app.get("/api/orders/alerts")
