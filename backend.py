@@ -21,9 +21,11 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 import metrics
 import token_status
+import watchlist
 from market_calendar import holiday_set
 from sources import ET, HERE, make_source, token_path
 
@@ -38,11 +40,12 @@ def load_config() -> dict[str, Any]:
     return json.loads(CONFIG_PATH.read_text())
 
 
-def load_universe(path: Path = UNIVERSE_PATH) -> tuple[list[str], dict[str, str]]:
+def load_universe(path: Path | None = None) -> tuple[list[str], dict[str, str]]:
     """Flat, de-duplicated ticker list plus symbol -> group.
 
     Accepts a plain list, {"tickers": [...]}, or {"groups": {"Name": [...]}} (or both keys).
     """
+    path = UNIVERSE_PATH if path is None else path
     raw = json.loads(path.read_text())
     groups: dict[str, list[str]] = {}
     if isinstance(raw, list):
@@ -239,6 +242,11 @@ class Screener:
             self.config["topd_min_pct_from_open"],
             self.config["topd_min_rvol"],
         )
+        summary["scans"] = metrics.scan_members(
+            counted,
+            self.config["topd_min_pct_from_open"],
+            self.config["topd_min_rvol"],
+        )
         now = self.clock()
         return {
             "summary": summary,
@@ -311,6 +319,54 @@ def index() -> FileResponse:
 @app.get("/api/screener-data")
 def screener_data() -> dict[str, Any]:
     return screener.snapshot()
+
+
+class UniverseUpdate(BaseModel):
+    mode: str = "merge"
+    text: str = ""
+
+
+class SymbolUpdate(BaseModel):
+    symbol: str = ""
+
+
+def _read_universe() -> dict[str, Any]:
+    try:
+        raw = json.loads(UNIVERSE_PATH.read_text())
+    except FileNotFoundError:
+        raw = {"groups": {}, "tickers": []}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "universe.json is not valid JSON") from exc
+    return watchlist.read_document(raw)
+
+
+def _write_universe(document: dict[str, Any]) -> dict[str, Any]:
+    temporary = UNIVERSE_PATH.with_name(UNIVERSE_PATH.name + ".tmp")
+    temporary.write_text(watchlist.dump_document(document))
+    os.replace(temporary, UNIVERSE_PATH)
+    screener.universe_mtime = 0.0
+    screener.reload_universe()
+    return {"symbols": list(screener.universe), "count": len(screener.universe)}
+
+
+@app.post("/api/universe")
+def update_universe(body: UniverseUpdate) -> dict[str, Any]:
+    """Replace or merge a txt/csv watchlist into universe.json. Groups are kept when the file has them."""
+    try:
+        document = watchlist.apply_watchlist(_read_universe(), body.text, body.mode)
+    except watchlist.WatchlistError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _write_universe(document)
+
+
+@app.post("/api/universe/symbol")
+def add_universe_symbol(body: SymbolUpdate) -> dict[str, Any]:
+    """Add one ticker. An existing symbol stays in its group."""
+    try:
+        document = watchlist.add_symbol(_read_universe(), body.symbol)
+    except watchlist.WatchlistError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _write_universe(document)
 
 
 @app.get("/api/candles")

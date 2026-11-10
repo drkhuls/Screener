@@ -96,29 +96,58 @@ def stock_row(
     }
 
 
+SCAN_KEYS = ("gapped_up", "positive_since_close", "moved_up_since_open", "topd_moved_up_since_open")
+
+
+def _above(left: Any, right: Any) -> bool:
+    return left is not None and right is not None and left > right
+
+
+def scan_flags(
+    row: dict[str, Any],
+    topd_min_pct_from_open: float = 2.0,
+    topd_min_rvol: float = 1.2,
+) -> dict[str, bool]:
+    """Which Top Scans a row belongs to. The same rules drive the counts and the table filter."""
+    pct, rvol = row.get("pct_from_open"), row.get("rvol")
+    return {
+        "gapped_up": _above(row.get("open"), row.get("prev_close")),
+        "positive_since_close": _above(row.get("price"), row.get("prev_close")),
+        "moved_up_since_open": _above(row.get("price"), row.get("open")),
+        "topd_moved_up_since_open": (
+            pct is not None and rvol is not None and pct >= topd_min_pct_from_open and rvol >= topd_min_rvol
+        ),
+    }
+
+
+def scan_members(
+    rows: Iterable[dict[str, Any]],
+    topd_min_pct_from_open: float = 2.0,
+    topd_min_rvol: float = 1.2,
+) -> dict[str, list[str]]:
+    """Tickers in each scan, in row order. Rows without a symbol are skipped."""
+    found = {key: [] for key in SCAN_KEYS}
+    for row in rows:
+        symbol = row.get("symbol")
+        if not symbol:
+            continue
+        for key, on in scan_flags(row, topd_min_pct_from_open, topd_min_rvol).items():
+            if on:
+                found[key].append(symbol)
+    return found
+
+
 def breadth_summary(
     rows: Iterable[dict[str, Any]],
     universe_count: int,
     topd_min_pct_from_open: float = 2.0,
     topd_min_rvol: float = 1.2,
 ) -> dict[str, int]:
-    def above(a: Any, b: Any) -> bool:
-        return a is not None and b is not None and a > b
-
-    gapped_up = positive = moved_up = topd = 0
+    counts = {key: 0 for key in SCAN_KEYS}
     for row in rows:
-        gapped_up += above(row["open"], row["prev_close"])
-        positive += above(row["price"], row["prev_close"])
-        moved_up += above(row["price"], row["open"])
-        pct, rvol = row["pct_from_open"], row["rvol"]
-        topd += pct is not None and rvol is not None and pct >= topd_min_pct_from_open and rvol >= topd_min_rvol
-    return {
-        "universe_count": universe_count,
-        "gapped_up": gapped_up,
-        "positive_since_close": positive,
-        "moved_up_since_open": moved_up,
-        "topd_moved_up_since_open": topd,
-    }
+        for key, on in scan_flags(row, topd_min_pct_from_open, topd_min_rvol).items():
+            counts[key] += on
+    return {"universe_count": universe_count, **counts}
 
 
 def sma(values: Sequence[float], length: int) -> list[float | None]:
