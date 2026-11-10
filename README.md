@@ -2,11 +2,12 @@
 
 Live breadth monitor, screener, and daily chart for a custom ticker universe, on the Charles Schwab Trader API.
 
-- **Top Scans**: my universe, gapped-up, +ve since last close, moved up since open, and topd moved up since open. Each bar is count / universe.
+- **Top Scans**: my universe, gapped-up, +ve since last close, moved up since open, and topd moved up since open. Each bar is count / universe. Click a scan to filter the table to those tickers; click it again, click my universe, or Show all to clear.
+- **Watchlist**: upload a txt or csv and Replace or Merge it into `universe.json`. A `ticker,group` header keeps groups; a flat symbol list is enough. The box under the table adds one ticker.
 - **Table**: Ticker, Price, % From Open, % Day, Volume, 20D RVOL, Paced RVOL. Click a header once for descending, again for ascending. The sort and the charted ticker survive the refresh.
 - **Refresh**: every 5 seconds during 9:30–16:00 ET on trading days; every 5 minutes otherwise (pre-market, after hours, weekends, holidays), so extended-hours prices still show up. The header badge shows the session and the current cadence.
 - **Token reminder**: a header badge counts down to the Schwab refresh-token expiry (7 days after `login`). From 2 days out a yellow banner appears; on the last day it turns red. The server logs a warning on each level change and hourly after that, and `meta.token` in `/api/screener-data` has `level`, `login_at`, `expires_at`, `seconds_left`.
-- **Chart**: daily candles, volume, 10 EMA red, 20 EMA blue, 50 SMA green, 200 SMA grey. Light background by default; the button switches it to dark.
+- **Chart**: daily candles, volume, and four moving averages (10 EMA red, 20 EMA blue, 50 SMA green, 200 SMA grey). Click an average to show or hide it, edit its period, or switch EMA/SMA. Dark mode toggles the chart background. B&W draws hollow up candles and filled down candles.
 
 ## Run
 
