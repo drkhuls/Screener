@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from alerts import dispatch_order_alert
+from sources import TRADE_LOGIN_HINT
 
 log = logging.getLogger("screener.orders")
 
@@ -198,10 +199,9 @@ def _check(response: Any, what: str) -> None:
     detail = schwab_detail(response)
     if status == 401:
         message = (
-            "Schwab accounts returned 401. This token cannot read accounts. "
-            "On developer.schwab.com enable Accounts and Trading Production on the app "
-            "(keep Market Data Production), wait until the app is Ready For Use, and log in again. "
-            "Refreshing this token will not add it."
+            "Schwab accounts returned 401. This trading token cannot read accounts. "
+            "The trading app needs Accounts and Trading Production and Ready For Use. "
+            + TRADE_LOGIN_HINT
         )
         if detail:
             message = f"{message} {detail}"
@@ -280,25 +280,35 @@ class OrderBook:
                 raise OrderError(f"No quote for {symbol}")
             return row
 
+        def trade_client() -> Any:
+            if screener.mode == "demo":
+                raise OrderError("Demo mode does not place orders")
+            screener.ensure_trade()
+            client = screener.trade_client
+            if client is None:
+                raise OrderError(TRADE_LOGIN_HINT)
+            return client
+
         def account() -> tuple[str, str]:
             if screener.mode == "demo":
                 return "demo", "demo"
-            source = screener.source
-            if source is None or not hasattr(source, "client"):
-                raise OrderError(screener.errors.get("schwab") or "Schwab is not connected")
-            return read_account(source.client)
+            return read_account(trade_client())
 
         def place(account_hash: str, order: Any):
+            return trade_client().place_order(account_hash, order)
+
+        def current_trade() -> Any:
             if screener.mode == "demo":
-                raise OrderError("Demo mode does not place orders")
-            return screener.source.client.place_order(account_hash, order)
+                return None
+            screener.ensure_trade()
+            return screener.trade_client
 
         return cls(
             mode=lambda: screener.mode,
             quote=quote,
             account=account,
             place=place,
-            client=lambda: getattr(screener.source, "client", None),
+            client=current_trade,
         )
 
     def preview(self, raw: dict[str, Any]) -> dict[str, Any]:

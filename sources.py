@@ -1,25 +1,117 @@
-"""Market data sources: Charles Schwab Trader API (schwab-py) and a credential-free demo."""
+"""Market data sources: Charles Schwab Trader API (schwab-py) and a credential-free demo.
+
+Quotes use the market-data app. Account lookup and orders use a second app.
+Schwab allows one product on an app, so the two clients never share a token file.
+"""
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import random
 import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from zoneinfo import ZoneInfo
 
 from metrics import normalize_schwab_candles, schwab_quote
 
 ET = ZoneInfo("America/New_York")
 HERE = Path(__file__).resolve().parent
+TRADE_CALLBACK_DEFAULT = "https://127.0.0.1:8182"
+TRADE_LOGIN_HINT = "No trading token. From /opt/Screener run: python backend.py login-trade --manual"
 
 
 def token_path() -> Path:
-    return Path(os.environ.get("SCHWAB_TOKEN_PATH", HERE / "token.json"))
+    raw = os.environ.get("SCHWAB_TOKEN_PATH", "").strip()
+    return Path(raw) if raw else HERE / "token.json"
+
+
+def trade_token_path() -> Path:
+    """Trading token beside the quote token unless SCHWAB_TRADE_TOKEN_PATH is set."""
+    raw = os.environ.get("SCHWAB_TRADE_TOKEN_PATH", "").strip()
+    return Path(raw) if raw else token_path().with_name("token-trade.json")
+
+
+def trade_callback_url() -> str:
+    return os.environ.get("SCHWAB_TRADE_CALLBACK_URL", "").strip() or TRADE_CALLBACK_DEFAULT
+
+
+def trade_credentials() -> tuple[str, str] | None:
+    key = os.environ.get("SCHWAB_TRADE_APP_KEY", "").strip()
+    secret = os.environ.get("SCHWAB_TRADE_APP_SECRET", "").strip()
+    if not key or not secret:
+        return None
+    return key, secret
+
+
+class TradeUnavailable(Exception):
+    """The trading app is not logged in. The message is safe to show."""
+
+
+def _usable_trade_token(path: Path) -> bool:
+    """True when the file has its own refresh token. The token value is not logged."""
+    try:
+        loaded = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return False
+    token = loaded.get("token") if isinstance(loaded, dict) else None
+    return isinstance(token, dict) and bool(str(token.get("refresh_token") or "").strip())
+
+
+def token_writer(path: Path) -> Callable[..., None]:
+    """Write one token file, mode 600. A refresh keeps that file's refresh token when Schwab omits it."""
+
+    def write(wrapped: dict[str, Any], *_args: Any, **_kwargs: Any) -> None:
+        body = wrapped
+        if isinstance(wrapped, dict) and isinstance(wrapped.get("token"), dict):
+            token = dict(wrapped["token"])
+            if not str(token.get("refresh_token") or "").strip() and path.exists():
+                try:
+                    previous = json.loads(path.read_text())
+                except (OSError, json.JSONDecodeError, UnicodeError):
+                    previous = None
+                old = previous.get("token") if isinstance(previous, dict) else None
+                if isinstance(old, dict) and old.get("refresh_token"):
+                    token["refresh_token"] = old["refresh_token"]
+            body = dict(wrapped)
+            body["token"] = token
+        payload = json.dumps(body).encode()
+        temporary = path.with_name(path.name + ".tmp")
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
+        os.replace(temporary, path)
+        os.chmod(path, 0o600)
+
+    return write
+
+
+def open_client(path: Path, api_key: str, app_secret: str):
+    """A schwab-py client that refreshes only the token file it was given."""
+    from schwab.auth import client_from_access_functions
+
+    def read() -> dict[str, Any]:
+        return json.loads(path.read_text())
+
+    return client_from_access_functions(api_key, app_secret, read, token_writer(path))
+
+
+def load_trade_client():
+    """Trading client, or TradeUnavailable when the key or token is not ready."""
+    creds = trade_credentials()
+    path = trade_token_path()
+    if creds is None or not _usable_trade_token(path):
+        raise TradeUnavailable(TRADE_LOGIN_HINT)
+    try:
+        return open_client(path, creds[0], creds[1])
+    except Exception as exc:
+        raise TradeUnavailable(TRADE_LOGIN_HINT) from exc
 
 
 def chunks(items: list[str], size: int) -> Iterable[list[str]]:
@@ -33,16 +125,10 @@ class SchwabSource:
     name = "schwab"
 
     def __init__(self, chunk_size: int = 100, history_per_minute: int = 100):
-        from schwab import auth
-
         path = token_path()
         if not path.exists():
             raise RuntimeError(f"No Schwab token at {path}. Run: python backend.py login")
-        self.client = auth.client_from_token_file(
-            str(path),
-            os.environ["SCHWAB_APP_KEY"],
-            os.environ["SCHWAB_APP_SECRET"],
-        )
+        self.client = open_client(path, os.environ["SCHWAB_APP_KEY"], os.environ["SCHWAB_APP_SECRET"])
         self.chunk_size = chunk_size
         self._min_gap = 60.0 / max(1, history_per_minute)
         self._last_call = 0.0
