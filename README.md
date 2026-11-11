@@ -28,7 +28,7 @@ Demo mode always refreshes every 5 seconds. Two demo-only variables help preview
 Schwab allows one product per app, so this server uses two apps and two token files. Quotes never call the trading app. Send never calls the market-data app.
 
 1. At [developer.schwab.com](https://developer.schwab.com), create the market-data app with **Market Data Production**. Create a second app with **Accounts and Trading Production**. Each callback must match that app. The trading callback `https://127.0.0.1:8182` has to be **Ready For Use** before `login-trade` works. `Approved - Pending` is not usable.
-2. On the server, the app lives in `/opt/Screener` and the systemd service is named `Screener`. Copy `.env.example` to `/opt/Screener/.env` (mode 600) and fill in the names below. Leave the values out of git.
+2. On the server, the app lives in `/root/Screener` and the systemd service is named `Screener`. Copy `.env.example` to `/root/Screener/.env` (mode 600) and fill in the names below. Leave the values out of git.
 
    Market-data app (quotes, history, candles, the 7-day banner):
 
@@ -49,11 +49,11 @@ Schwab allows one product per app, so this server uses two apps and two token fi
    ```
 
    An empty callback uses `https://127.0.0.1:8182`. An empty quote token path uses `token.json` next to `backend.py`. An empty trade token path uses `token-trade.json` next to the quote token. Both token files are mode 600.
-3. Quote login, from `/opt/Screener`: `python backend.py login --manual`. It writes only the quote token. Paste the redirected URL back. A browser on that machine can use `python backend.py login` without `--manual`.
-4. After the trading app is **Ready For Use**, from `/opt/Screener`: `python backend.py login-trade --manual`. It writes only `token-trade.json`. The quote token is not opened. Run it as the user the `Screener` service runs as, so the service can refresh that file.
+3. Quote login, from `/root/Screener`: `python backend.py login --manual`. It writes only the quote token. Paste the redirected URL back. A browser on that machine can use `python backend.py login` without `--manual`.
+4. After the trading app is **Ready For Use**, from `/root/Screener`: `python backend.py login-trade --manual`. It writes only `token-trade.json`. The quote token is not opened. Run it as the user the `Screener` service runs as, so the service can refresh that file.
 5. `python backend.py`. With `SCHWAB_APP_KEY` set the server uses Schwab for quotes; without it, demo data. `SCREENER_MODE=schwab|demo` forces either. Demo Send does not call Schwab.
 
-Each client refreshes its own access token from its own refresh token. A missing trading token does not stop quote polling. Review still quotes. Send says to run `login-trade` instead of dumping a 401. The quote loop notices a new quote token or a new trade token within a few seconds, so a login does not need a restart. Changing `.env` does. From `/opt/Screener`:
+Each client refreshes its own access token from its own refresh token. A missing trading token does not stop quote polling. Review still quotes. Send says to run `login-trade` instead of dumping a 401. The quote loop notices a new quote token or a new trade token within a few seconds, so a login does not need a restart. Changing `.env` does. From `/root/Screener`:
 
 ```bash
 sudo systemctl restart Screener
@@ -110,7 +110,7 @@ Review opens a details page and reads a quote. It does not look up the account a
 | AM | `DAY` | `AM` |
 | PM | `DAY` | `PM` |
 
-The order is a single equity leg (`BUY` or `SELL`), `MARKET`, `LIMIT`, or `STOP`. Review reads a quote from the market-data app. Send looks up the account and places the order on the trading app only. If that app's key or token is missing, Send says to run `python backend.py login-trade --manual` from `/opt/Screener`. A trading token that Schwab rejects still shows Schwab's 401 text. Demo mode does not call either client.
+The order is a single equity leg (`BUY` or `SELL`), `MARKET`, `LIMIT`, or `STOP`. Review reads a quote from the market-data app. Send looks up the account and places the order on the trading app only. If that app's key or token is missing, Send says to run `python backend.py login-trade --manual` from `/root/Screener`. A trading token that Schwab rejects still shows Schwab's 401 text. Demo mode does not call either client.
 
 **Alerts.** Send, fill, and errors show an in-app popup. The same text is emailed when `ORDER_ALERT_EMAIL` and `SMTP_HOST` are set. With the address set and SMTP unset, the server logs the email instead of sending it. `ORDER_ALERT_PHONE` is an SMS placeholder: the server logs the message and does not contact a carrier. Leave both unset to skip them.
 

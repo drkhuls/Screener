@@ -205,7 +205,7 @@
           <input id="order-symbol" type="text" maxlength="12" placeholder="Ticker" autocomplete="off" spellcheck="false" aria-label="Ticker">
           <button type="submit" id="order-review">Review</button>
         </form>
-        <p class="order-hint">Ticker only. Two Schwab apps: quotes use <code>python backend.py login</code>. Send uses the trading app. From /opt/Screener run <code>python backend.py login-trade --manual</code>. The Screener service reads the new trade token on its own. Use <code>sudo systemctl restart Screener</code> only after .env changes.</p>
+        <p class="order-hint">Ticker only. Two Schwab apps: quotes use <code>python backend.py login</code>. Send uses the trading app. From /root/Screener run <code>python backend.py login-trade --manual</code>. The Screener service reads the new trade token on its own. Use <code>sudo systemctl restart Screener</code> only after .env changes.</p>
       </div>
     </section>
   </div>

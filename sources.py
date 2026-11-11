@@ -22,7 +22,7 @@ from metrics import normalize_schwab_candles, schwab_quote
 ET = ZoneInfo("America/New_York")
 HERE = Path(__file__).resolve().parent
 TRADE_CALLBACK_DEFAULT = "https://127.0.0.1:8182"
-TRADE_LOGIN_HINT = "No trading token. From /opt/Screener run: python backend.py login-trade --manual"
+TRADE_LOGIN_HINT = "No trading token. From /root/Screener run: python backend.py login-trade --manual"
 
 
 def token_path() -> Path:
