@@ -21,11 +21,24 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 import metrics
 import token_status
+import watchlist
+from orders import OrderBook, OrderError
 from market_calendar import holiday_set
-from sources import ET, HERE, make_source, token_path
+from sources import (
+    ET,
+    HERE,
+    TradeUnavailable,
+    load_trade_client,
+    make_source,
+    token_path,
+    trade_callback_url,
+    trade_credentials,
+    trade_token_path,
+)
 
 log = logging.getLogger("screener")
 
@@ -38,11 +51,12 @@ def load_config() -> dict[str, Any]:
     return json.loads(CONFIG_PATH.read_text())
 
 
-def load_universe(path: Path = UNIVERSE_PATH) -> tuple[list[str], dict[str, str]]:
+def load_universe(path: Path | None = None) -> tuple[list[str], dict[str, str]]:
     """Flat, de-duplicated ticker list plus symbol -> group.
 
     Accepts a plain list, {"tickers": [...]}, or {"groups": {"Name": [...]}} (or both keys).
     """
+    path = UNIVERSE_PATH if path is None else path
     raw = json.loads(path.read_text())
     groups: dict[str, list[str]] = {}
     if isinstance(raw, list):
@@ -98,7 +112,10 @@ class Screener:
     def __init__(self, config: dict[str, Any], mode: str):
         self.config = config
         self.mode = mode
-        self.source = make_source(mode, config["quote_chunk_size"], config["history_requests_per_minute"])
+        self.source = None
+        self.source_login_at: datetime | None = None
+        self.trade_client = None
+        self.trade_login_at: datetime | None = None
         self.lock = threading.Lock()
         self.universe: list[str] = []
         self.groups: dict[str, str] = {}
@@ -116,7 +133,61 @@ class Screener:
         if mode == "demo" and demo_age:
             self.demo_login_at = datetime.now(ET) - timedelta(hours=float(demo_age))
         self.stop = threading.Event()
+        self.ensure_source()
+        self.ensure_trade()
         self.reload_universe()
+        self.orders = OrderBook.for_screener(self)
+
+    def ensure_source(self) -> None:
+        """Reload the quote client when a new market-data login replaces token.json."""
+        if self.mode == "demo":
+            if self.source is None:
+                self.source = make_source("demo", 0, 0)
+            return
+        login_at = token_status.read_login_time(token_path())
+        if login_at is None:
+            if self.source is None:
+                self.errors["schwab"] = f"No Schwab token at {token_path()}. Run: python backend.py login"
+            return
+        if self.source is not None and login_at == self.source_login_at:
+            return
+        try:
+            source = make_source(
+                "schwab", self.config["quote_chunk_size"], self.config["history_requests_per_minute"]
+            )
+        except Exception as exc:
+            self.errors["schwab"] = "Schwab quotes could not be loaded. Run: python backend.py login"
+            log.warning("Schwab quotes: %s", type(exc).__name__)
+            return
+        self.source = source
+        self.source_login_at = login_at
+        self.last_poll = None
+        self.errors.pop("schwab", None)
+        self.errors.pop("quotes", None)
+        log.info("Market-data client loaded")
+
+    def ensure_trade(self) -> None:
+        """Reload the trading client when token-trade.json changes. Never touches quotes."""
+        if self.mode == "demo":
+            return
+        try:
+            login_at = token_status.read_login_time(trade_token_path())
+            if login_at is None or trade_credentials() is None:
+                self.trade_client = None
+                self.trade_login_at = None
+                return
+            if self.trade_client is not None and login_at == self.trade_login_at:
+                return
+            self.trade_client = load_trade_client()
+            self.trade_login_at = login_at
+            log.info("Trading client loaded")
+        except TradeUnavailable:
+            self.trade_client = None
+            self.trade_login_at = None
+        except Exception as exc:
+            self.trade_client = None
+            self.trade_login_at = None
+            log.warning("Trading client: %s", type(exc).__name__)
 
     def reload_universe(self) -> bool:
         mtime = UNIVERSE_PATH.stat().st_mtime
@@ -129,6 +200,8 @@ class Screener:
         return True
 
     def load_stats(self, symbols: list[str]) -> None:
+        if self.source is None:
+            return
         today = datetime.now(ET).date()
         for symbol in symbols:
             try:
@@ -191,6 +264,14 @@ class Screener:
                 self.reload_universe()
             except Exception as exc:
                 self.errors["universe"] = f"universe.json: {exc}"
+            try:
+                self.ensure_source()
+            except Exception as exc:
+                log.warning("Schwab quotes: %s", type(exc).__name__)
+            try:
+                self.ensure_trade()
+            except Exception as exc:
+                log.warning("Trading client: %s", type(exc).__name__)
             self.check_token()
             interval = poll_interval(self.config, now, self.mode)
             if self.last_poll is None or time.monotonic() - self.last_poll >= interval - tick / 2:
@@ -199,6 +280,8 @@ class Screener:
 
     def poll_quotes(self) -> None:
         self.last_poll = time.monotonic()
+        if self.source is None:
+            return
         try:
             quotes = self.source.get_quotes(list(self.universe))
         except Exception as exc:
@@ -236,6 +319,11 @@ class Screener:
         summary = metrics.breadth_summary(
             counted,
             len(counted),
+            self.config["topd_min_pct_from_open"],
+            self.config["topd_min_rvol"],
+        )
+        summary["scans"] = metrics.scan_members(
+            counted,
             self.config["topd_min_pct_from_open"],
             self.config["topd_min_rvol"],
         )
@@ -293,6 +381,7 @@ async def lifespan(_: FastAPI):
     threads = [
         threading.Thread(target=screener.history_loop, daemon=True, name="history"),
         threading.Thread(target=screener.quote_loop, daemon=True, name="quotes"),
+        threading.Thread(target=screener.orders.watch_loop, args=(screener.stop,), daemon=True, name="orders"),
     ]
     for thread in threads:
         thread.start()
@@ -313,6 +402,113 @@ def screener_data() -> dict[str, Any]:
     return screener.snapshot()
 
 
+class UniverseUpdate(BaseModel):
+    mode: str = "merge"
+    text: str = ""
+
+
+class SymbolUpdate(BaseModel):
+    symbol: str = ""
+
+
+def _read_universe() -> dict[str, Any]:
+    try:
+        raw = json.loads(UNIVERSE_PATH.read_text())
+    except FileNotFoundError:
+        raw = {"groups": {}, "tickers": []}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "universe.json is not valid JSON") from exc
+    return watchlist.read_document(raw)
+
+
+def _write_universe(document: dict[str, Any]) -> dict[str, Any]:
+    temporary = UNIVERSE_PATH.with_name(UNIVERSE_PATH.name + ".tmp")
+    temporary.write_text(watchlist.dump_document(document))
+    os.replace(temporary, UNIVERSE_PATH)
+    screener.universe_mtime = 0.0
+    screener.reload_universe()
+    return {"symbols": list(screener.universe), "count": len(screener.universe)}
+
+
+@app.post("/api/universe")
+def update_universe(body: UniverseUpdate) -> dict[str, Any]:
+    """Replace or merge a txt/csv watchlist into universe.json. Groups are kept when the file has them."""
+    try:
+        document = watchlist.apply_watchlist(_read_universe(), body.text, body.mode)
+    except watchlist.WatchlistError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _write_universe(document)
+
+
+@app.post("/api/universe/symbol")
+def add_universe_symbol(body: SymbolUpdate) -> dict[str, Any]:
+    """Add one ticker. An existing symbol stays in its group."""
+    try:
+        document = watchlist.add_symbol(_read_universe(), body.symbol)
+    except watchlist.WatchlistError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _write_universe(document)
+
+
+class PreviewRequest(BaseModel):
+    side: str = "buy"
+    order_type: str = "market"
+    tif: str = "day"
+    shares: Any = 100
+    symbol: str = ""
+    price: Any = None
+
+
+class SendRequest(BaseModel):
+    preview_id: str
+
+
+class CancelRequest(BaseModel):
+    order_id: int
+
+
+def _order_call(method, *args):
+    book = screener.orders
+    try:
+        return method(*args)
+    except OrderError as exc:
+        book.notify("error", str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("Order request failed")
+        book.notify("error", "Order failed")
+        raise HTTPException(status_code=502, detail="Order failed") from exc
+
+
+@app.post("/api/orders/preview")
+def preview_order(body: PreviewRequest) -> dict[str, Any]:
+    """Check the ticket and read a quote. Does not call Schwab place_order or the accounts API."""
+    return _order_call(screener.orders.preview, body.model_dump())
+
+
+@app.post("/api/orders/send")
+def send_order(body: SendRequest) -> dict[str, Any]:
+    """Place the reviewed order. Demo mode returns it and does not call Schwab."""
+    return _order_call(screener.orders.send, body.preview_id)
+
+
+@app.get("/api/orders/alerts")
+def order_alerts() -> dict[str, Any]:
+    return {"alerts": screener.orders.drain_alerts()}
+
+
+@app.get("/api/orders/open")
+def open_orders() -> dict[str, Any]:
+    """Working orders on the trading account. Demo mode returns none and does not call Schwab."""
+    return _order_call(screener.orders.working_orders)
+
+
+@app.post("/api/orders/cancel")
+def cancel_order(body: CancelRequest) -> dict[str, Any]:
+    """Cancel one working order. A filled order is not canceled. Demo mode does not call Schwab."""
+    return _order_call(screener.orders.cancel, body.order_id)
+
+
 @app.get("/api/candles")
 def candles(symbol: str = Query(..., min_length=1, max_length=12)) -> dict[str, Any]:
     symbol = symbol.strip().upper()
@@ -324,29 +520,57 @@ def candles(symbol: str = Query(..., min_length=1, max_length=12)) -> dict[str, 
         raise HTTPException(502, f"{symbol}: {exc}") from exc
 
 
-def login(manual: bool = False) -> None:
-    """Browser flow by default (catches the redirect on the callback port); --manual for headless."""
+def _run_login(path: Path, api_key: str, app_secret: str, callback_url: str, manual: bool) -> None:
+    """Write one token file. The other app's token is not opened."""
     from schwab import auth
 
-    path = str(token_path())
-    args = (
-        os.environ["SCHWAB_APP_KEY"],
-        os.environ["SCHWAB_APP_SECRET"],
-        os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182"),
-        path,
-    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    args = (api_key, app_secret, callback_url, str(path))
     if manual:
         auth.client_from_manual_flow(*args)
     else:
         auth.client_from_login_flow(*args, callback_timeout=1800.0, interactive=False)
-    status = token_status.token_status(token_status.read_login_time(Path(path)), datetime.now(ET))
+    os.chmod(path, 0o600)
+    status = token_status.token_status(token_status.read_login_time(path), datetime.now(ET))
     print(f"Token written to {path}; refresh token expires {status['expires_at']}")
+    print("A running Screener process picks this file up within a few seconds.")
+
+
+def login(manual: bool = False) -> None:
+    """Market-data app. Browser flow by default; --manual pastes the redirect."""
+    key = os.environ.get("SCHWAB_APP_KEY", "").strip()
+    secret = os.environ.get("SCHWAB_APP_SECRET", "").strip()
+    if not key or not secret:
+        raise SystemExit("Set SCHWAB_APP_KEY and SCHWAB_APP_SECRET before python backend.py login")
+    callback = os.environ.get("SCHWAB_CALLBACK_URL", "").strip() or "https://127.0.0.1:8182"
+    print("This login is the market-data app only. It writes the quote token and does not place orders.")
+    _run_login(token_path(), key, secret, callback, manual)
+
+
+def login_trade(manual: bool = False) -> None:
+    """Accounts and Trading app. Writes token-trade.json and leaves the quote token alone."""
+    creds = trade_credentials()
+    if creds is None:
+        raise SystemExit(
+            "Set SCHWAB_TRADE_APP_KEY and SCHWAB_TRADE_APP_SECRET before python backend.py login-trade"
+        )
+    print(
+        "This login is the Accounts and Trading app. It writes only the trading token. "
+        "Wait until that app is Ready For Use. The quote token is not changed."
+    )
+    _run_login(trade_token_path(), creds[0], creds[1], trade_callback_url(), manual)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    if sys.argv[1:2] == ["login"]:
-        login(manual="--manual" in sys.argv[2:])
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    manual = "--manual" in sys.argv[2:]
+    if command == "login":
+        login(manual=manual)
+    elif command == "login-trade":
+        login_trade(manual=manual)
+    elif command:
+        raise SystemExit(f"Unknown command {command}. Use login, login-trade, or no command to serve.")
     else:
         import uvicorn
 

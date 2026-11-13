@@ -33,15 +33,27 @@
   .box { background: var(--panel); border: 1px solid var(--line); }
 
   /* Section A: Top Scans (thinkorswim style) */
-  .scans-head { padding: 5px 8px; font-weight: 600; border-bottom: 1px solid var(--line); background: #202020; }
-  .scan { display: grid; grid-template-columns: 1fr 120px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #000; }
-  .scan.total { background: #3a3a3a; }
+  .scans-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-weight: 600; border-bottom: 1px solid var(--line); background: #202020; }
+  #scan-clear { margin-left: auto; padding: 1px 8px; font-weight: 500; }
+  #scan-clear[hidden] { display: none; }
+  .watchlist, .add-ticker { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .add-ticker { border-bottom: 0; }
+  .watchlist input[type="file"] { display: none; }
+  label.file-btn { background: #2a2a2a; color: var(--text); border: 1px solid #444; padding: 3px 10px; border-radius: 3px; cursor: pointer; }
+  .add-ticker input { flex: 1; min-width: 0; background: #0b0b0b; color: var(--text); border: 1px solid #555; border-radius: 3px; padding: 5px 8px; font: inherit; }
+  .add-ticker input:focus { outline: none; border-color: #888; }
+  .watch-note { color: var(--muted); font-size: 11px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.scan { display: grid; grid-template-columns: 1fr 120px; align-items: center; width: 100%; text-align: left; padding: 6px 8px; border: 0; border-bottom: 1px solid #000; border-radius: 0; background: transparent; color: inherit; }
+  button.scan:hover { background: #242424; }
+  button.scan.total { background: #3a3a3a; }
+  button.scan.active { background: #26324a; }
   .scan .num { text-align: center; font-variant-numeric: tabular-nums; }
   .bar { height: 7px; background: #0b0b0b; border: 1px solid #555; margin-top: 2px; }
   .bar > i { display: block; height: 100%; background: #9a9a9a; width: 0; transition: width .4s; }
   .scan.total .bar > i { background: #c8c8c8; }
 
   /* Section B: table */
+  #table-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .table-wrap { overflow: auto; min-height: 0; flex: 1; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { padding: 5px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid #222; }
@@ -49,8 +61,9 @@
   th { position: sticky; top: 0; background: #202020; color: #bbb; font-weight: 600; cursor: pointer; user-select: none; }
   th:hover { color: #fff; }
   th .arrow { color: var(--muted); font-size: 10px; margin-left: 3px; }
-  tbody tr { cursor: pointer; }
+  tbody tr { cursor: pointer; -webkit-touch-callout: none; }
   tbody tr:hover { background: #1f1f1f; }
+  .chart-btn { margin-left: 8px; min-height: 32px; padding: 4px 10px; }
   tbody tr.selected { background: var(--sel); }
   td.sym { font-weight: 600; }
   td.sym small { color: var(--muted); font-weight: 400; margin-left: 6px; }
@@ -63,18 +76,89 @@
   .chart-box { display: flex; flex-direction: column; min-height: 0; }
   .chart-head { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
   .chart-head b { font-size: 14px; }
-  .legend { display: flex; gap: 10px; font-size: 12px; color: var(--muted); }
-  .legend span::before { content: ""; display: inline-block; width: 12px; height: 2px; margin-right: 4px; vertical-align: middle; background: currentColor; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--muted); }
+  .ma { display: inline-flex; align-items: center; gap: 4px; }
+  .ma-vis { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; }
+  .ma-vis i { width: 12px; height: 2px; background: currentColor; display: inline-block; }
+  .ma.off .ma-vis { opacity: 0.35; text-decoration: line-through; }
+  .ma input { width: 46px; background: #111; color: var(--text); border: 1px solid #444; border-radius: 3px; padding: 2px 4px; font: inherit; }
+  .ma-type { padding: 2px 6px; min-width: 42px; }
   #ohlc { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-  button { margin-left: auto; background: #2a2a2a; color: var(--text); border: 1px solid #444; padding: 3px 10px; border-radius: 3px; cursor: pointer; }
-  #chart { flex: 1; min-height: 360px; position: relative; }
+  button { background: #2a2a2a; color: var(--text); border: 1px solid #444; padding: 3px 10px; border-radius: 3px; cursor: pointer; font: inherit; }
+  .chart-actions { margin-left: auto; display: flex; gap: 8px; }
+  #bw[aria-pressed="true"] { background: #3a3a3a; border-color: #c8c8c8; color: #fff; }
+  .pager { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border-top: 1px solid var(--line); }
+  .pager[hidden] { display: none; }
+  .pager button.selected { background: #3a3a3a; border-color: #c8c8c8; color: #fff; }
+  #order-entry { flex: 0 0 auto; }
+  .order-toggle { display: block; width: 100%; text-align: left; background: #202020; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-weight: 600; padding: 5px 8px; }
+  .order-row { display: flex; gap: 8px; align-items: center; padding: 8px; }
+  .order-row + .order-row { padding-top: 0; }
+  #order-side { min-width: 72px; font-weight: 700; border-color: transparent; }
+  #order-side.buy { background: #0f7a45; color: #fff; }
+  #order-side.sell { background: #b42318; color: #fff; }
+  .menu { position: relative; }
+  .menu > button { min-width: 88px; text-align: left; }
+  .menu-list { position: absolute; z-index: 15; top: calc(100% + 4px); left: 0; min-width: 220px; margin: 0; padding: 6px 0; list-style: none; background: #1b1b1b; border: 1px solid #555; box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+  .menu-list[hidden] { display: none; }
+  .menu-list button { display: flex; width: 100%; justify-content: space-between; gap: 12px; text-align: left; background: transparent; border: 0; border-radius: 0; padding: 7px 12px; }
+  .menu-list button small { display: block; color: var(--muted); font-size: 11px; }
+  .menu-list button .check { color: #5fd3c3; visibility: hidden; }
+  .menu-list button[aria-selected="true"] .check { visibility: visible; }
+  .menu-list button:hover { background: #2a2a2a; }
+  .shares { display: flex; align-items: center; margin-left: auto; background: #0b0b0b; border: 1px solid #555; border-radius: 4px; }
+  .shares button { border: 0; background: transparent; min-width: 32px; padding: 6px; }
+  #order-shares { width: 64px; background: transparent; border: 0; color: var(--text); text-align: center; font: inherit; padding: 6px 0; }
+  #order-shares:focus { outline: none; }
+  #order-price-row[hidden] { display: none; }
+  #order-price-label { min-width: 48px; color: var(--muted); }
+  #order-price, #order-symbol { flex: 1; min-width: 0; background: #0b0b0b; color: var(--text); border: 1px solid #555; border-radius: 4px; padding: 7px 8px; font: inherit; }
+  #order-price:focus, #order-symbol:focus { outline: none; border-color: #888; }
+  #order-form { padding-top: 0; }
+  .order-hint { margin: 0; padding: 0 8px 8px; color: var(--muted); font-size: 11px; }
+  .order-page { position: fixed; inset: 0; background: rgba(0,0,0,.62); display: flex; align-items: center; justify-content: center; z-index: 20; }
+  .order-page[hidden] { display: none; }
+  .order-page-card { width: min(520px, calc(100% - 32px)); background: #1b1b1b; border: 1px solid #444; padding: 18px; }
+  .order-page-card h2 { margin: 0 0 10px; font-size: 16px; }
+  #order-summary { margin: 0 0 8px; line-height: 1.5; }
+  .order-note { margin: 0 0 14px; color: #ffd666; font-size: 12px; min-height: 0; }
+  .order-note:empty { display: none; }
+  .order-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  #order-send.buy { background: #0f7a45; border-color: #0f7a45; color: #fff; }
+  #order-send.sell { background: #b42318; border-color: #b42318; color: #fff; }
+  .ticker-peek { margin: 0; padding: 10px 12px; border-top: 1px solid var(--line); font-size: 15px; }
+  .ticker-peek b { margin-right: 8px; }
+  #open-orders { flex: 0 0 auto; }
+  #open-orders h2 { margin: 0; padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--line); background: #202020; }
+  .open-orders { width: 100%; border-collapse: collapse; }
+  .open-orders th, .open-orders td { padding: 8px; text-align: left; border-bottom: 1px solid #222; }
+  .open-orders .cancel-order { min-height: 36px; }
+  #open-orders .order-hint { padding: 8px 10px; }
+  #toasts { position: fixed; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; z-index: 30; max-width: min(380px, calc(100% - 28px)); }
+  .toast { background: #202020; border: 1px solid #444; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.45); cursor: pointer; line-height: 1.4; }
+  .toast.error { border-color: #ef5350; }
+  #chart { flex: 1; min-height: 360px; position: relative; touch-action: pan-x; }
   #chart-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; z-index: 2; }
+  #chart-exit[hidden] { display: none; }
+  body.chart-full { overflow: hidden; height: 100vh; }
+  body.chart-full header, body.chart-full #token-banner, body.chart-full #errors, body.chart-full .left { display: none; }
+  body.chart-full main { display: block; padding: 0; height: 100vh; }
+  body.chart-full .chart-box { position: fixed; inset: 0; z-index: 40; display: flex; min-height: 100vh; background: #121212; }
+  body.chart-full #chart { min-height: 0; height: auto; flex: 1; }
 
   @media (max-width: 980px) {
     body { height: auto; }
-    main { grid-template-columns: 1fr; height: auto; }
-    .table-wrap { max-height: 60vh; }
-    #chart { height: 520px; }
+    header { flex-wrap: wrap; gap: 8px; }
+    main { grid-template-columns: 1fr; height: auto; padding: 8px; }
+    .left, .order-row, .watchlist, .add-ticker, .chart-head { flex-wrap: wrap; }
+    .table-wrap { max-height: 70vh; -webkit-overflow-scrolling: touch; }
+    button, label.file-btn, .add-ticker input, #order-symbol, #order-price, #order-shares, .chart-btn, .pager button, .cancel-order, #chart-exit {
+      min-height: 44px;
+      font-size: 16px;
+    }
+    th, td { padding: 10px 8px; }
+    #chart { height: 70vh; }
+    button.scan { grid-template-columns: 1fr minmax(96px, 34%); min-height: 48px; }
   }
 </style>
 </head>
@@ -91,33 +175,97 @@
 <main>
   <div class="left">
     <section class="box" id="scans">
-      <div class="scans-head">Top Scans ▾</div>
+      <div class="scans-head">
+        <span>Top Scans ▾</span>
+        <button type="button" id="scan-clear" hidden>Show all</button>
+      </div>
+      <div class="watchlist">
+        <label class="file-btn">Upload<input id="watchlist-file" type="file" accept=".txt,.csv,text/plain,text/csv" aria-label="Watchlist file"></label>
+        <button type="button" id="watchlist-replace" title="Replace the universe with this file">Replace</button>
+        <button type="button" id="watchlist-merge" title="Add this file to the universe">Merge</button>
+        <span id="watchlist-note" class="watch-note"></span>
+      </div>
       <div id="scan-rows"></div>
     </section>
-    <section class="box table-wrap">
-      <table>
-        <thead><tr id="head"></tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
+    <section class="box" id="table-panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr id="head"></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="pager" class="pager" hidden></div>
+      <p id="ticker-peek" class="ticker-peek">Tap a ticker for price and percent change.</p>
+    </section>
+    <form id="add-ticker" class="box add-ticker">
+      <input id="add-symbol" type="text" maxlength="12" placeholder="Add ticker" autocomplete="off" spellcheck="false" aria-label="Add ticker">
+      <button type="submit">Add</button>
+      <span id="add-note" class="watch-note"></span>
+    </form>
+    <section class="box" id="order-entry">
+      <button type="button" class="order-toggle" id="order-toggle" aria-expanded="true" aria-controls="order-body">Order Entry ▾</button>
+      <div id="order-body">
+        <div class="order-row">
+          <button type="button" id="order-side" class="buy" aria-pressed="false">Buy</button>
+          <div class="menu">
+            <button type="button" id="order-type" aria-haspopup="listbox" aria-expanded="false">Market</button>
+            <ul id="order-type-menu" class="menu-list" role="listbox" hidden></ul>
+          </div>
+          <div class="menu">
+            <button type="button" id="order-tif" aria-haspopup="listbox" aria-expanded="false">Day</button>
+            <ul id="order-tif-menu" class="menu-list" role="listbox" hidden></ul>
+          </div>
+          <div class="shares">
+            <button type="button" id="shares-down" aria-label="Decrease shares by 10">−</button>
+            <input id="order-shares" type="number" min="1" step="10" value="100" aria-label="Shares">
+            <button type="button" id="shares-up" aria-label="Increase shares by 10">+</button>
+          </div>
+        </div>
+        <div class="order-row" id="order-price-row" hidden>
+          <span id="order-price-label">Limit</span>
+          <input id="order-price" inputmode="decimal" placeholder="Price" autocomplete="off" aria-label="Price">
+        </div>
+        <form id="order-form" class="order-row">
+          <input id="order-symbol" type="text" maxlength="12" placeholder="Ticker" autocomplete="off" spellcheck="false" aria-label="Ticker">
+          <button type="submit" id="order-review">Review</button>
+        </form>
+        <p class="order-hint">Ticker only. Two Schwab apps: quotes use <code>python backend.py login</code>. Send uses the trading app. From /root/Screener run <code>python backend.py login-trade --manual</code>. The Screener service reads the new trade token on its own. Use <code>sudo systemctl restart Screener</code> only after .env changes.</p>
+      </div>
+    </section>
+    <section class="box" id="open-orders">
+      <h2>Pending orders</h2>
+      <div id="open-orders-body"><p class="order-hint">Loading…</p></div>
     </section>
   </div>
   <section class="box chart-box">
     <div class="chart-head">
       <b id="chart-symbol">—</b>
-      <div class="legend">
-        <span style="color:#ef5350">10 EMA</span>
-        <span style="color:#2962ff">20 EMA</span>
-        <span style="color:#2e9d4f">50 SMA</span>
-        <span style="color:#9e9e9e">200 SMA</span>
-      </div>
+      <div class="legend" id="legend"></div>
       <span id="ohlc"></span>
-      <button id="theme">Dark chart</button>
+      <div class="chart-actions">
+        <button type="button" id="chart-exit" hidden>Exit</button>
+        <button type="button" id="bw" aria-pressed="false" title="Hollow up candles and filled down candles">B&amp;W</button>
+        <button type="button" id="theme">Dark mode</button>
+      </div>
     </div>
-    <div id="chart"><div id="chart-msg">Click a row to chart it</div></div>
+    <div id="chart"><div id="chart-msg">Chart or hold a ticker</div></div>
   </section>
 </main>
+<div id="order-page" class="order-page" hidden>
+  <div class="order-page-card" id="order-card" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="order-page-title">
+    <h2 id="order-page-title">Order details</h2>
+    <p id="order-summary"></p>
+    <p id="order-note" class="order-note"></p>
+    <div class="order-actions">
+      <button type="button" id="order-cancel">Cancel</button>
+      <button type="button" id="order-send" class="buy">Send</button>
+    </div>
+  </div>
+</div>
+<div id="toasts"></div>
 <script>
 const POLL_MS = 5000;
+const PAGE_SIZE = 20;
 const SCANS = [
   ["universe_count", "my universe", true],
   ["gapped_up", "gapped-up"],
@@ -132,7 +280,6 @@ const COLUMNS = [
   { key: "pct_from_close", label: "% Day" },
   { key: "volume", label: "Volume" },
   { key: "rvol", label: "20D RVOL" },
-  { key: "rvol_pace", label: "Paced RVOL", title: "volume / (20-day avg volume × share of session elapsed)" },
 ];
 const SESSION_LABELS = { regular: "Market open", pre: "Pre-market", post: "After hours", closed: "Market closed" };
 const THEMES = {
@@ -140,13 +287,47 @@ const THEMES = {
   dark: { background: "#121212", text: "#cccccc", grid: "#1f1f1f", border: "#333333" },
 };
 
+const DEFAULT_MAS = [
+  { period: 10, type: "EMA", color: "#ef5350", visible: true },
+  { period: 20, type: "EMA", color: "#2962ff", visible: true },
+  { period: 50, type: "SMA", color: "#2e9d4f", visible: true },
+  { period: 200, type: "SMA", color: "#9e9e9e", visible: true },
+];
+
+function loadMas() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("screener.mas") || "null");
+    if (!Array.isArray(saved) || saved.length !== DEFAULT_MAS.length) return DEFAULT_MAS.map((item) => ({ ...item }));
+    return DEFAULT_MAS.map((item, index) => {
+      const period = Number(saved[index].period);
+      const type = saved[index].type === "SMA" ? "SMA" : "EMA";
+      return {
+        period: Number.isInteger(period) && period >= 1 && period <= 500 ? period : item.period,
+        type,
+        color: item.color,
+        visible: saved[index].visible !== false,
+      };
+    });
+  } catch (err) {
+    return DEFAULT_MAS.map((item) => ({ ...item }));
+  }
+}
+
 const state = {
   sort: JSON.parse(localStorage.getItem("screener.sort") || "null") || { key: "pct_from_close", dir: "desc" },
+  page: 1,
   selected: localStorage.getItem("screener.symbol"),
   theme: localStorage.getItem("screener.theme") || "light",
+  bw: localStorage.getItem("screener.bw") === "1",
+  scan: null,
+  mas: loadMas(),
   data: null,
   chartBars: null,
+  chartVolume: null,
 };
+if (!COLUMNS.some((column) => column.key === state.sort.key)) {
+  state.sort = { key: "pct_from_close", dir: "desc" };
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -164,14 +345,25 @@ const signClass = (v) => (v == null || v === 0 ? "" : v > 0 ? "pos" : "neg");
 
 function renderScans(summary) {
   const total = summary.universe_count || 0;
+  $("scan-clear").hidden = !state.scan;
   $("scan-rows").innerHTML = SCANS.map(([key, label, isTotal]) => {
     const count = summary[key] ?? 0;
     const width = total ? (count / total) * 100 : 0;
-    return `<div class="scan${isTotal ? " total" : ""}">
+    const active = !isTotal && state.scan === key;
+    return `<button type="button" class="scan${isTotal ? " total" : ""}${active ? " active" : ""}" data-scan="${isTotal ? "" : key}" aria-pressed="${active}">
       <span>${label}</span>
       <div><div class="num">${count}</div><div class="bar"><i style="width:${width}%"></i></div></div>
-    </div>`;
+    </button>`;
   }).join("");
+}
+
+function setScan(key) {
+  const next = key && state.scan !== key ? key : null;
+  if (next !== state.scan) state.page = 1;
+  state.scan = next;
+  if (!state.data) return;
+  renderScans(state.data.summary);
+  renderTable();
 }
 
 function renderHead() {
@@ -193,19 +385,58 @@ function sortedStocks(stocks) {
   });
 }
 
+function visibleStocks(stocks) {
+  if (!state.scan || !state.data) return stocks;
+  const members = new Set((state.data.summary.scans || {})[state.scan] || []);
+  return stocks.filter((s) => members.has(s.symbol));
+}
+
+function listedStocks(stocks) {
+  return sortedStocks(visibleStocks(stocks));
+}
+
+function pageOf(stocks) {
+  const listed = listedStocks(stocks);
+  const pages = Math.max(1, Math.ceil(listed.length / PAGE_SIZE));
+  if (state.page > pages) state.page = pages;
+  if (state.page < 1) state.page = 1;
+  const start = (state.page - 1) * PAGE_SIZE;
+  return { rows: listed.slice(start, start + PAGE_SIZE), total: listed.length, pages };
+}
+
+function renderPager(pages) {
+  const pager = $("pager");
+  if (pages <= 1) {
+    pager.hidden = true;
+    pager.innerHTML = "";
+    return;
+  }
+  pager.hidden = false;
+  const numbers = [];
+  for (let page = 1; page <= pages; page++) {
+    const current = page === state.page;
+    numbers.push(`<button type="button" class="page${current ? " selected" : ""}" data-page="${page}" aria-current="${current ? "page" : "false"}">${page}</button>`);
+  }
+  pager.innerHTML = `
+    <button type="button" data-page="prev"${state.page === 1 ? " disabled" : ""}>Prev</button>
+    ${numbers.join("")}
+    <button type="button" data-page="next"${state.page === pages ? " disabled" : ""}>Next</button>`;
+}
+
 function renderTable() {
   const { stocks, meta } = state.data;
   const hotRvol = meta.thresholds.topd_min_rvol;
-  $("rows").innerHTML = sortedStocks(stocks).map((s) => `
+  const page = pageOf(stocks);
+  $("rows").innerHTML = page.rows.map((s) => `
     <tr data-symbol="${s.symbol}" class="${s.symbol === state.selected ? "selected" : ""}">
-      <td class="sym">${s.symbol}${s.group ? `<small>${s.group}</small>` : ""}</td>
+      <td class="sym">${s.symbol}${s.group ? `<small>${s.group}</small>` : ""}<button type="button" class="chart-btn">Chart</button></td>
       <td${s.extended_hours ? ` class="ext" title="Extended-hours trade · regular close ${fmtPrice(s.regular_price)}"` : ""}>${fmtPrice(s.price)}</td>
       <td class="${signClass(s.pct_from_open)}">${fmtPct(s.pct_from_open)}</td>
       <td class="${signClass(s.pct_from_close)}">${fmtPct(s.pct_from_close)}</td>
       <td>${fmtVolume(s.volume)}</td>
       <td class="${s.rvol != null && s.rvol >= hotRvol ? "hot" : ""}">${fmtRatio(s.rvol)}</td>
-      <td class="${s.rvol_pace != null && s.rvol_pace >= hotRvol ? "hot" : ""}">${fmtRatio(s.rvol_pace)}</td>
     </tr>`).join("");
+  renderPager(page.pages);
 }
 
 function fmtLeft(seconds) {
@@ -254,27 +485,71 @@ function renderStatus() {
   $("errors").textContent = errors.length ? errors.slice(0, 3).join(" · ") + (errors.length > 3 ? ` (+${errors.length - 3} more)` : "") : "";
 }
 
+async function loadScreener() {
+  const res = await fetch("/api/screener-data", { cache: "no-store" });
+  if (!res.ok) throw new Error(res.status);
+  state.data = await res.json();
+  renderScans(state.data.summary);
+  renderHead();
+  renderTable();
+  renderStatus();
+  updateLiveBar();
+}
+
 async function poll() {
   try {
-    const res = await fetch("/api/screener-data", { cache: "no-store" });
-    if (!res.ok) throw new Error(res.status);
-    state.data = await res.json();
-    renderScans(state.data.summary);
-    renderHead();
-    renderTable();
-    renderStatus();
-    updateLiveBar();
-    if (!state.selected && state.data.stocks.length) {
-      state.selected = sortedStocks(state.data.stocks)[0].symbol;
-      renderTable();
-      loadChart(state.selected);
-    }
+    await loadScreener();
   } catch (err) {
     $("status").textContent = "Backend unreachable — retrying";
   } finally {
     setTimeout(poll, POLL_MS);
   }
 }
+
+async function postUniverse(url, body, noteId) {
+  const note = $(noteId);
+  note.textContent = "Saving…";
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      note.textContent = typeof data.detail === "string" ? data.detail : "Could not update the watchlist";
+      return false;
+    }
+    note.textContent = data.count + (data.count === 1 ? " ticker" : " tickers");
+    await loadScreener();
+    return true;
+  } catch (err) {
+    note.textContent = "Could not update the watchlist";
+    return false;
+  }
+}
+
+async function sendWatchlist(mode) {
+  const file = $("watchlist-file").files[0];
+  if (!file) {
+    $("watchlist-note").textContent = "Choose a txt or csv file";
+    return;
+  }
+  const text = await file.text();
+  await postUniverse("/api/universe", { mode, text }, "watchlist-note");
+}
+$("watchlist-replace").addEventListener("click", () => sendWatchlist("replace"));
+$("watchlist-merge").addEventListener("click", () => sendWatchlist("merge"));
+$("watchlist-file").addEventListener("change", () => {
+  const file = $("watchlist-file").files[0];
+  $("watchlist-note").textContent = file ? file.name : "";
+});
+$("add-ticker").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const symbol = $("add-symbol").value.trim();
+  if (!symbol) return;
+  if (await postUniverse("/api/universe/symbol", { symbol }, "add-note")) $("add-symbol").value = "";
+});
 
 $("head").addEventListener("click", (e) => {
   const th = e.target.closest("th");
@@ -288,14 +563,77 @@ $("head").addEventListener("click", (e) => {
   if (state.data) renderTable();
 });
 
-$("rows").addEventListener("click", (e) => {
-  const tr = e.target.closest("tr");
-  if (!tr) return;
-  state.selected = tr.dataset.symbol;
-  localStorage.setItem("screener.symbol", state.selected);
-  renderTable();
-  loadChart(state.selected);
+$("scan-rows").addEventListener("click", (e) => {
+  const row = e.target.closest("button.scan");
+  if (!row) return;
+  setScan(row.dataset.scan || null);
 });
+$("scan-clear").addEventListener("click", () => setScan(null));
+$("pager").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button || button.disabled || !state.data) return;
+  const pages = pageOf(state.data.stocks).pages;
+  const choice = button.dataset.page;
+  if (choice === "prev") state.page = Math.max(1, state.page - 1);
+  else if (choice === "next") state.page = Math.min(pages, state.page + 1);
+  else state.page = Number(choice);
+  renderTable();
+});
+
+function showPeek(symbol) {
+  const stock = state.data && state.data.stocks.find((row) => row.symbol === symbol);
+  state.selected = symbol;
+  localStorage.setItem("screener.symbol", symbol);
+  renderTable();
+  const peek = $("ticker-peek");
+  if (!stock) {
+    peek.textContent = symbol;
+    return;
+  }
+  peek.innerHTML = `<b>${stock.symbol}</b> ${fmtPrice(stock.price)} <span class="${signClass(stock.pct_from_close)}">${fmtPct(stock.pct_from_close)}</span>`;
+}
+
+function openChart(symbol) {
+  document.body.classList.add("chart-full");
+  $("chart-exit").hidden = false;
+  state.selected = symbol;
+  localStorage.setItem("screener.symbol", symbol);
+  renderTable();
+  loadChart(symbol);
+}
+
+function closeChart() {
+  document.body.classList.remove("chart-full");
+  $("chart-exit").hidden = true;
+}
+
+$("rows").addEventListener("click", (event) => {
+  const tr = event.target.closest("tr");
+  if (!tr) return;
+  if (event.target.closest(".chart-btn")) {
+    openChart(tr.dataset.symbol);
+    return;
+  }
+  showPeek(tr.dataset.symbol);
+});
+
+let pressTimer = 0;
+$("rows").addEventListener("touchstart", (event) => {
+  const tr = event.target.closest("tr");
+  if (!tr || event.target.closest(".chart-btn") || event.touches.length !== 1) return;
+  const symbol = tr.dataset.symbol;
+  pressTimer = window.setTimeout(() => {
+    pressTimer = 0;
+    openChart(symbol);
+  }, 550);
+}, { passive: true });
+function clearPress() {
+  if (pressTimer) window.clearTimeout(pressTimer);
+  pressTimer = 0;
+}
+$("rows").addEventListener("touchend", clearPress);
+$("rows").addEventListener("touchmove", clearPress);
+$("rows").addEventListener("touchcancel", clearPress);
 
 /* Section C: chart */
 const chart = LightweightCharts.createChart($("chart"), {
@@ -311,12 +649,82 @@ const candleSeries = chart.addCandlestickSeries({
 const volumeSeries = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
 chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
 const lineOpts = (color) => ({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-const maSeries = {
-  ema10: chart.addLineSeries(lineOpts("#ef5350")),
-  ema20: chart.addLineSeries(lineOpts("#2962ff")),
-  sma50: chart.addLineSeries(lineOpts("#2e9d4f")),
-  sma200: chart.addLineSeries(lineOpts("#9e9e9e")),
-};
+const maSeries = state.mas.map((item) => chart.addLineSeries(lineOpts(item.color)));
+
+function smaValues(values, length) {
+  const out = new Array(values.length).fill(null);
+  let running = 0;
+  for (let i = 0; i < values.length; i++) {
+    running += values[i];
+    if (i >= length) running -= values[i - length];
+    if (i >= length - 1) out[i] = running / length;
+  }
+  return out;
+}
+
+function emaValues(values, length) {
+  const out = new Array(values.length).fill(null);
+  if (values.length < length) return out;
+  const alpha = 2 / (length + 1);
+  let current = values.slice(0, length).reduce((sum, value) => sum + value, 0) / length;
+  out[length - 1] = current;
+  for (let i = length; i < values.length; i++) {
+    current = values[i] * alpha + current * (1 - alpha);
+    out[i] = current;
+  }
+  return out;
+}
+
+function maLine(bars, spec) {
+  if (!spec.visible) return [];
+  const closes = bars.map((bar) => bar.close);
+  const values = spec.type === "SMA" ? smaValues(closes, spec.period) : emaValues(closes, spec.period);
+  return bars.flatMap((bar, index) => (values[index] == null ? [] : [{ time: bar.time, value: Math.round(values[index] * 10000) / 10000 }]));
+}
+
+function candleColors() {
+  if (state.bw && state.theme === "dark") {
+    return { upColor: "#121212", downColor: "#ffffff", borderUpColor: "#ffffff", borderDownColor: "#ffffff", wickUpColor: "#ffffff", wickDownColor: "#ffffff" };
+  }
+  if (state.bw) {
+    return { upColor: "#ffffff", downColor: "#000000", borderUpColor: "#000000", borderDownColor: "#000000", wickUpColor: "#000000", wickDownColor: "#000000" };
+  }
+  return { upColor: "#26a69a", downColor: "#ef5350", borderUpColor: "#26a69a", borderDownColor: "#ef5350", wickUpColor: "#26a69a", wickDownColor: "#ef5350" };
+}
+
+function volumeColor(up) {
+  if (state.bw && state.theme === "dark") return up ? "#8a8a8a" : "#f5f5f5";
+  if (state.bw) return up ? "#c8c8c8" : "#111111";
+  return (up ? "#26a69a" : "#ef5350") + "80";
+}
+
+function paintChart() {
+  candleSeries.applyOptions(candleColors());
+  if (!state.chartBars) return;
+  const byTime = new Map(state.chartBars.map((bar) => [bar.time, bar]));
+  volumeSeries.setData((state.chartVolume || []).map((bar) => {
+    const candle = byTime.get(bar.time);
+    const up = candle ? candle.close >= candle.open : true;
+    return { time: bar.time, value: bar.value, color: volumeColor(up) };
+  }));
+  state.mas.forEach((spec, index) => {
+    maSeries[index].applyOptions({ color: spec.color, visible: spec.visible });
+    maSeries[index].setData(maLine(state.chartBars, spec));
+  });
+}
+
+function saveMas() {
+  localStorage.setItem("screener.mas", JSON.stringify(state.mas.map(({ period, type, visible }) => ({ period, type, visible }))));
+}
+
+function renderLegend() {
+  $("legend").innerHTML = state.mas.map((spec, index) => `
+    <span class="ma${spec.visible ? "" : " off"}" data-ma="${index}">
+      <button type="button" class="ma-vis" style="color:${spec.color}" title="Show or hide" aria-pressed="${spec.visible}"><i></i></button>
+      <input class="ma-period" type="number" min="1" max="500" step="1" value="${spec.period}" aria-label="Moving average period">
+      <button type="button" class="ma-type" title="Switch EMA or SMA">${spec.type}</button>
+    </span>`).join("");
+}
 
 function applyTheme() {
   const t = THEMES[state.theme];
@@ -326,36 +734,131 @@ function applyTheme() {
     rightPriceScale: { borderColor: t.border },
     timeScale: { borderColor: t.border },
   });
-  $("theme").textContent = state.theme === "light" ? "Dark chart" : "Light chart";
+  $("theme").textContent = state.theme === "light" ? "Dark mode" : "Light mode";
+  $("bw").setAttribute("aria-pressed", String(state.bw));
+  paintChart();
 }
 $("theme").addEventListener("click", () => {
   state.theme = state.theme === "light" ? "dark" : "light";
   localStorage.setItem("screener.theme", state.theme);
   applyTheme();
 });
+$("bw").addEventListener("click", () => {
+  state.bw = !state.bw;
+  localStorage.setItem("screener.bw", state.bw ? "1" : "0");
+  applyTheme();
+});
+$("legend").addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-ma]");
+  if (!chip) return;
+  const spec = state.mas[Number(chip.dataset.ma)];
+  if (event.target.closest(".ma-vis")) spec.visible = !spec.visible;
+  else if (event.target.closest(".ma-type")) spec.type = spec.type === "EMA" ? "SMA" : "EMA";
+  else return;
+  saveMas();
+  renderLegend();
+  paintChart();
+});
+$("legend").addEventListener("change", (event) => {
+  const input = event.target.closest(".ma-period");
+  if (!input) return;
+  const spec = state.mas[Number(input.closest("[data-ma]").dataset.ma)];
+  const period = Number(input.value);
+  if (!Number.isInteger(period) || period < 1 || period > 500) {
+    input.value = spec.period;
+    return;
+  }
+  spec.period = period;
+  saveMas();
+  paintChart();
+});
+renderLegend();
 applyTheme();
 
 let chartRequest = 0;
+const chartCache = new Map();
+const THREE_MONTH_BARS = 63;
+
+function prefetchChart(symbol) {
+  if (!symbol || chartCache.has(symbol)) return;
+  const pending = fetch("/api/candles?symbol=" + encodeURIComponent(symbol), { cache: "no-store" })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("chart");
+      const data = await res.json();
+      chartCache.set(symbol, data);
+      return data;
+    })
+    .catch(() => {
+      chartCache.delete(symbol);
+      return null;
+    });
+  chartCache.set(symbol, pending);
+}
+
 async function loadChart(symbol) {
   const request = ++chartRequest;
   $("chart-symbol").textContent = symbol;
   $("chart-msg").textContent = "Loading " + symbol + "…";
+  prefetchChart(symbol);
   try {
-    const res = await fetch("/api/candles?symbol=" + encodeURIComponent(symbol));
-    if (!res.ok) throw new Error((await res.json()).detail || res.status);
-    const data = await res.json();
+    const cached = chartCache.get(symbol);
+    const data = cached && typeof cached.then === "function" ? await cached : cached;
     if (request !== chartRequest) return;
-    candleSeries.setData(data.candles);
-    volumeSeries.setData(data.volume);
-    for (const [key, series] of Object.entries(maSeries)) series.setData(data[key]);
+    if (!data || !data.candles) throw new Error("no bars");
     state.chartBars = data.candles;
+    state.chartVolume = data.volume;
+    candleSeries.setData(data.candles);
+    paintChart();
     const n = data.candles.length;
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 130), to: n + 8 });
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - THREE_MONTH_BARS), to: n + 8 });
     $("chart-msg").textContent = "";
+    const list = state.data ? listedStocks(state.data.stocks) : [];
+    const index = list.findIndex((row) => row.symbol === symbol);
+    if (list.length > 1 && index >= 0) prefetchChart(list[(index + 1) % list.length].symbol);
   } catch (err) {
     if (request === chartRequest) $("chart-msg").textContent = `Chart unavailable: ${err.message}`;
   }
 }
+
+function stepChart(direction) {
+  if (!state.data) return;
+  const list = listedStocks(state.data.stocks);
+  if (!list.length) return;
+  const current = $("chart-symbol").textContent;
+  let index = list.findIndex((row) => row.symbol === current);
+  if (index < 0) index = 0;
+  const next = (index + direction + list.length) % list.length;
+  state.page = Math.floor(next / PAGE_SIZE) + 1;
+  openChart(list[next].symbol);
+}
+
+let chartTouch = null;
+$("chart").addEventListener("touchstart", (event) => {
+  if (!document.body.classList.contains("chart-full") || event.touches.length !== 1) return;
+  const touch = event.touches[0];
+  chartTouch = { x: touch.clientX, y: touch.clientY, id: touch.identifier };
+}, { passive: true });
+$("chart").addEventListener("touchmove", (event) => {
+  if (!chartTouch || !document.body.classList.contains("chart-full")) return;
+  const touch = [...event.touches].find((item) => item.identifier === chartTouch.id);
+  if (!touch) return;
+  const dx = touch.clientX - chartTouch.x;
+  const dy = touch.clientY - chartTouch.y;
+  if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) event.preventDefault();
+}, { passive: false });
+$("chart").addEventListener("touchend", (event) => {
+  if (!chartTouch) return;
+  const touch = [...event.changedTouches].find((item) => item.identifier === chartTouch.id);
+  const start = chartTouch;
+  chartTouch = null;
+  if (!touch || !document.body.classList.contains("chart-full")) return;
+  const dx = touch.clientX - start.x;
+  const dy = touch.clientY - start.y;
+  if (Math.abs(dy) < 48 || Math.abs(dy) < Math.abs(dx)) return;
+  stepChart(dy < 0 ? 1 : -1);
+});
+$("chart").addEventListener("touchcancel", () => { chartTouch = null; });
+$("chart-exit").addEventListener("click", closeChart);
 
 function updateLiveBar() {
   const bars = state.chartBars;
@@ -370,8 +873,10 @@ function updateLiveBar() {
     high: Math.max(s.high ?? price, s.open, price), low: Math.min(s.low ?? price, s.open, price),
   };
   bars[bars.length - 1] = bar;
+  const volume = (state.chartVolume || []).find((item) => item.time === bar.time);
+  if (volume) volume.value = s.volume || 0;
   candleSeries.update(bar);
-  volumeSeries.update({ time: bar.time, value: s.volume || 0, color: (bar.close >= bar.open ? "#26a69a" : "#ef5350") + "80" });
+  paintChart();
 }
 
 chart.subscribeCrosshairMove((param) => {
@@ -379,8 +884,273 @@ chart.subscribeCrosshairMove((param) => {
   $("ohlc").textContent = bar ? `O ${bar.open.toFixed(2)}  H ${bar.high.toFixed(2)}  L ${bar.low.toFixed(2)}  C ${bar.close.toFixed(2)}` : "";
 });
 
-if (state.selected) loadChart(state.selected);
 poll();
+
+/* Order entry. Review opens the details page. Send is the only call that can reach Schwab. */
+const ORDER_TYPES = [
+  ["market", "Market"],
+  ["limit", "Limit"],
+  ["stop", "Stop"],
+];
+const TIF = [
+  ["day", "Day", ""],
+  ["gtc", "GTC", "Good Till Canceled"],
+  ["am", "AM", ""],
+  ["pm", "PM", ""],
+];
+const orderState = { side: "buy", orderType: "market", tif: "day", previewId: null, busy: false };
+
+function orderErrorText(data) {
+  if (!data) return "Order failed";
+  if (typeof data.detail === "string") return data.detail;
+  if (Array.isArray(data.detail)) return data.detail.map((item) => item.msg || String(item)).join(" ");
+  return "Order failed";
+}
+
+function popup(kind, message) {
+  const el = document.createElement("div");
+  el.className = "toast" + (kind === "error" ? " error" : "");
+  el.textContent = message;
+  el.title = "Click to dismiss";
+  el.addEventListener("click", () => el.remove());
+  $("toasts").appendChild(el);
+  if (kind === "submit") setTimeout(() => el.remove(), 12000);
+}
+
+function tifChoices() {
+  return orderState.orderType === "limit" ? TIF : TIF.filter(([key]) => key === "day");
+}
+
+function closeMenus() {
+  for (const id of ["order-type-menu", "order-tif-menu"]) {
+    $(id).hidden = true;
+    $(id === "order-type-menu" ? "order-type" : "order-tif").setAttribute("aria-expanded", "false");
+  }
+}
+
+function renderOrderMenus() {
+  const typeLabel = ORDER_TYPES.find(([key]) => key === orderState.orderType)[1];
+  $("order-type").textContent = typeLabel;
+  $("order-type-menu").innerHTML = ORDER_TYPES.map(([key, label]) => `
+    <li><button type="button" data-type="${key}" aria-selected="${key === orderState.orderType}">${label}<span class="check">✓</span></button></li>`).join("");
+  if (!tifChoices().some(([key]) => key === orderState.tif)) orderState.tif = "day";
+  const tif = TIF.find(([key]) => key === orderState.tif);
+  $("order-tif").textContent = tif[1];
+  $("order-tif-menu").innerHTML = tifChoices().map(([key, label, note]) => `
+    <li><button type="button" data-tif="${key}" aria-selected="${key === orderState.tif}"><span>${label}${note ? `<small>${note}</small>` : ""}</span><span class="check">✓</span></button></li>`).join("");
+  const priced = orderState.orderType !== "market";
+  $("order-price-row").hidden = !priced;
+  $("order-price-label").textContent = orderState.orderType === "stop" ? "Stop" : "Limit";
+  $("order-side").textContent = orderState.side === "buy" ? "Buy" : "Sell";
+  $("order-side").className = orderState.side;
+  $("order-side").setAttribute("aria-pressed", String(orderState.side === "sell"));
+}
+
+function stepShares(delta) {
+  const current = Math.round(Number($("order-shares").value));
+  const base = Number.isFinite(current) && current >= 1 ? current : 100;
+  $("order-shares").value = String(Math.max(1, base + delta));
+}
+
+function closeOrderPage() {
+  $("order-page").hidden = true;
+  orderState.previewId = null;
+  $("order-note").textContent = "";
+}
+
+function openOrderPage(data) {
+  orderState.previewId = data.preview_id;
+  $("order-summary").textContent = data.summary;
+  $("order-note").textContent = "";
+  $("order-send").disabled = false;
+  $("order-send").className = (data.plan && data.plan.side) || orderState.side;
+  $("order-page").hidden = false;
+  $("order-card").focus();
+}
+
+$("order-toggle").addEventListener("click", () => {
+  const body = $("order-body");
+  body.hidden = !body.hidden;
+  const open = !body.hidden;
+  $("order-toggle").setAttribute("aria-expanded", String(open));
+  $("order-toggle").textContent = "Order Entry " + (open ? "▾" : "▸");
+});
+
+$("order-side").addEventListener("click", () => {
+  orderState.side = orderState.side === "buy" ? "sell" : "buy";
+  renderOrderMenus();
+});
+
+$("order-type").addEventListener("click", () => {
+  const open = $("order-type-menu").hidden;
+  closeMenus();
+  $("order-type-menu").hidden = !open;
+  $("order-type").setAttribute("aria-expanded", String(open));
+});
+
+$("order-tif").addEventListener("click", () => {
+  const open = $("order-tif-menu").hidden;
+  closeMenus();
+  $("order-tif-menu").hidden = !open;
+  $("order-tif").setAttribute("aria-expanded", String(open));
+});
+
+$("order-type-menu").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-type]");
+  if (!button) return;
+  orderState.orderType = button.dataset.type;
+  closeMenus();
+  renderOrderMenus();
+});
+
+$("order-tif-menu").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-tif]");
+  if (!button) return;
+  orderState.tif = button.dataset.tif;
+  closeMenus();
+  renderOrderMenus();
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".menu")) closeMenus();
+});
+
+$("shares-down").addEventListener("click", () => stepShares(-10));
+$("shares-up").addEventListener("click", () => stepShares(10));
+
+$("order-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (orderState.busy) return;
+  closeMenus();
+  const priced = orderState.orderType !== "market";
+  orderState.busy = true;
+  $("order-review").disabled = true;
+  try {
+    const res = await fetch("/api/orders/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        side: orderState.side,
+        order_type: orderState.orderType,
+        tif: orderState.tif,
+        shares: Number($("order-shares").value),
+        symbol: $("order-symbol").value,
+        price: priced ? Number($("order-price").value) : null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      popup("error", orderErrorText(data));
+      return;
+    }
+    openOrderPage(data);
+  } catch (err) {
+    popup("error", "Order preview failed");
+  } finally {
+    orderState.busy = false;
+    $("order-review").disabled = false;
+  }
+});
+
+$("order-cancel").addEventListener("click", closeOrderPage);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("order-page").hidden) closeOrderPage();
+});
+
+$("order-send").addEventListener("click", async () => {
+  if (!orderState.previewId || $("order-send").disabled) return;
+  $("order-send").disabled = true;
+  try {
+    const res = await fetch("/api/orders/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preview_id: orderState.previewId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      $("order-note").textContent = orderErrorText(data);
+      $("order-send").disabled = false;
+      return;
+    }
+    closeOrderPage();
+    if (data.alert) popup(data.alert.kind, data.alert.message);
+    await loadOpenOrders();
+  } catch (err) {
+    $("order-note").textContent = "Order send failed";
+    $("order-send").disabled = false;
+  }
+});
+
+function money(value) {
+  return value == null ? "—" : Number(value).toFixed(2);
+}
+
+function renderOpenOrders(data) {
+  const box = $("open-orders-body");
+  const orders = data.orders || [];
+  if (!orders.length) {
+    box.innerHTML = `<p class="order-hint">${data.mode === "demo" ? "Demo mode has no live orders." : "No pending orders."}</p>`;
+    return;
+  }
+  box.innerHTML = `<table class="open-orders"><thead><tr><th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody>${
+    orders.map((order) => `<tr>
+      <td>${order.symbol}</td>
+      <td>${order.side}</td>
+      <td>${order.order_type}</td>
+      <td>${order.quantity == null ? "—" : order.quantity}</td>
+      <td>${money(order.price)}</td>
+      <td>${order.status}</td>
+      <td><button type="button" class="cancel-order" data-order-id="${order.order_id}">Cancel</button></td>
+    </tr>`).join("")
+  }</tbody></table>`;
+}
+
+async function loadOpenOrders() {
+  try {
+    const res = await fetch("/api/orders/open", { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      $("open-orders-body").innerHTML = `<p class="order-hint">${orderErrorText(data)}</p>`;
+      return;
+    }
+    renderOpenOrders(data);
+  } catch (err) {
+    $("open-orders-body").innerHTML = `<p class="order-hint">Pending orders unavailable</p>`;
+  }
+}
+
+$("open-orders").addEventListener("click", async (event) => {
+  const button = event.target.closest(".cancel-order");
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  try {
+    const res = await fetch("/api/orders/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_id: Number(button.dataset.orderId) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) popup("error", orderErrorText(data));
+  } catch (err) {
+    popup("error", "Cancel failed");
+  }
+  await loadOpenOrders();
+});
+
+renderOrderMenus();
+loadOpenOrders();
+
+async function pollAlerts() {
+  try {
+    const res = await fetch("/api/orders/alerts", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      for (const alert of data.alerts || []) popup(alert.kind, alert.message);
+    }
+  } catch (err) { /* the next poll retries */ }
+  setTimeout(pollAlerts, 5000);
+}
+pollAlerts();
 </script>
 </body>
 </html>
