@@ -2,8 +2,8 @@
 
 The ticket is a side, an order type, a time in force, a share count, and a ticker.
 Limit and stop also carry a price. Time in force is two Schwab fields: duration
-and session. Overnight (EXTO) is a session value the API accepts and schwab-py's
-Session enum does not list yet.
+and session. EXTO and GTC EXTO are thinkorswim labels. The orders API accepts
+only NORMAL, AM, PM, and SEAMLESS, so those two post session SEAMLESS.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ TIF = {
     "gtc": ("GOOD_TILL_CANCEL", "NORMAL", "GTC"),
     "ext": ("DAY", "SEAMLESS", "EXT"),
     "gtc_ext": ("GOOD_TILL_CANCEL", "SEAMLESS", "GTC EXT"),
-    "exto": ("DAY", "EXTO", "EXTO"),
-    "gtc_exto": ("GOOD_TILL_CANCEL", "EXTO", "GTC EXTO"),
+    "exto": ("DAY", "SEAMLESS", "EXTO"),
+    "gtc_exto": ("GOOD_TILL_CANCEL", "SEAMLESS", "GTC EXTO"),
     "am": ("DAY", "AM", "AM"),
     "pm": ("DAY", "PM", "PM"),
 }

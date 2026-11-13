@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -43,7 +44,7 @@ def test_market_and_stop_are_day_only_and_limit_has_the_full_menu():
     with pytest.raises(OrderError, match="Day only"):
         normalize_ticket({"symbol": "TSLA", "order_type": "market", "tif": "gtc", "shares": 100})
     limit = normalize_ticket({"symbol": "TSLA", "order_type": "limit", "tif": "gtc_exto", "shares": 100, "price": 250})
-    assert (limit.duration, limit.session) == ("GOOD_TILL_CANCEL", "EXTO")
+    assert (limit.duration, limit.session) == ("GOOD_TILL_CANCEL", "SEAMLESS")
 
 
 def test_limit_and_stop_orders_carry_the_schwab_session():
@@ -59,6 +60,18 @@ def test_limit_and_stop_orders_carry_the_schwab_session():
         "symbol": "AMD", "order_type": "stop", "shares": 100, "price": 90,
     })).build()
     assert stop["orderType"] == "STOP" and stop["session"] == "NORMAL" and stop["stopPrice"] == "90.00"
+
+
+def test_exto_posts_session_seamless_never_exto():
+    """Thinkorswim EXTO is a label. Schwab session is SEAMLESS."""
+    expected = {"exto": "DAY", "gtc_exto": "GOOD_TILL_CANCEL"}
+    for tif, duration in expected.items():
+        built = equity_order(normalize_ticket({
+            "symbol": "NVDA", "side": "buy", "order_type": "limit", "tif": tif, "shares": 100, "price": 180,
+        })).build()
+        assert built["session"] == "SEAMLESS"
+        assert built["duration"] == duration
+        assert "EXTO" not in json.dumps(built)
 
 
 def test_account_401_surfaces_the_schwab_error():
@@ -141,7 +154,7 @@ def test_send_is_the_only_place_and_a_401_stays_a_schwab_error():
     preview = book.preview({
         "symbol": "NVDA", "shares": 100, "order_type": "limit", "tif": "exto", "price": 10,
     })
-    assert preview["plan"]["session"] == "EXTO" and preview["placed"] is False
+    assert preview["plan"]["session"] == "SEAMLESS" and preview["placed"] is False
     with pytest.raises(OrderError, match="insufficient_scope") as caught:
         book.send(preview["preview_id"])
     assert "Not a stock or ETF" not in str(caught.value)
@@ -149,7 +162,8 @@ def test_send_is_the_only_place_and_a_401_stays_a_schwab_error():
     book.account = lambda: ("hash", "123")
     sent = book.send(preview["preview_id"])
     assert sent["placed"] is True and sent["order_id"] == 42
-    assert placed[0]["session"] == "EXTO" and placed[0]["duration"] == "DAY"
+    assert placed[0]["session"] == "SEAMLESS" and placed[0]["duration"] == "DAY"
+    assert "EXTO" not in json.dumps(placed[0])
 
 
 def test_email_logs_when_smtp_is_unset_and_sms_is_a_placeholder(caplog, monkeypatch):

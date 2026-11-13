@@ -105,8 +105,8 @@ Review opens a details page and reads a quote. It does not look up the account a
 | GTC | `GOOD_TILL_CANCEL` | `NORMAL` |
 | EXT | `DAY` | `SEAMLESS` |
 | GTC EXT | `GOOD_TILL_CANCEL` | `SEAMLESS` |
-| EXTO | `DAY` | `EXTO` |
-| GTC EXTO | `GOOD_TILL_CANCEL` | `EXTO` |
+| EXTO | `DAY` | `SEAMLESS` |
+| GTC EXTO | `GOOD_TILL_CANCEL` | `SEAMLESS` |
 | AM | `DAY` | `AM` |
 | PM | `DAY` | `PM` |
 
