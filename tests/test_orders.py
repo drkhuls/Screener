@@ -38,21 +38,24 @@ def test_ticker_box_rejects_a_sentence_and_keeps_a_symbol():
 def test_market_and_stop_are_day_only_and_limit_has_the_full_menu():
     assert tif_choices("market") == ["day"]
     assert tif_choices("stop") == ["day"]
-    assert tif_choices("limit") == ["day", "gtc", "ext", "gtc_ext", "exto", "gtc_exto", "am", "pm"]
-    with pytest.raises(OrderError, match="Day only"):
-        normalize_ticket({"symbol": "TSLA", "order_type": "stop", "tif": "exto", "shares": 100, "price": 200})
+    assert tif_choices("limit") == ["day", "gtc", "am", "pm"]
+    with pytest.raises(OrderError, match="not available"):
+        normalize_ticket({"symbol": "TSLA", "order_type": "limit", "tif": "exto", "shares": 100, "price": 200})
+    with pytest.raises(OrderError, match="not available"):
+        normalize_ticket({"symbol": "TSLA", "order_type": "limit", "tif": "gtc_ext", "shares": 100, "price": 200})
     with pytest.raises(OrderError, match="Day only"):
         normalize_ticket({"symbol": "TSLA", "order_type": "market", "tif": "gtc", "shares": 100})
-    limit = normalize_ticket({"symbol": "TSLA", "order_type": "limit", "tif": "gtc_exto", "shares": 100, "price": 250})
-    assert (limit.duration, limit.session) == ("GOOD_TILL_CANCEL", "SEAMLESS")
+    limit = normalize_ticket({"symbol": "TSLA", "order_type": "limit", "tif": "gtc", "shares": 100, "price": 250})
+    assert (limit.duration, limit.session) == ("GOOD_TILL_CANCEL", "NORMAL")
 
 
 def test_limit_and_stop_orders_carry_the_schwab_session():
     built = equity_order(normalize_ticket({
-        "symbol": "NVDA", "side": "sell", "order_type": "limit", "tif": "ext", "shares": 110, "price": 140.5,
+        "symbol": "NVDA", "side": "sell", "order_type": "limit", "tif": "pm", "shares": 110, "price": 140.5,
     })).build()
     assert built["orderType"] == "LIMIT"
-    assert built["session"] == "SEAMLESS" and built["duration"] == "DAY"
+    assert built["session"] == "PM" and built["duration"] == "DAY"
+    assert "EXTO" not in json.dumps(built)
     assert built["price"] == "140.50"
     assert built["orderLegCollection"][0]["instruction"] == "SELL"
     assert built["orderLegCollection"][0]["quantity"] == 110
@@ -62,16 +65,18 @@ def test_limit_and_stop_orders_carry_the_schwab_session():
     assert stop["orderType"] == "STOP" and stop["session"] == "NORMAL" and stop["stopPrice"] == "90.00"
 
 
-def test_exto_posts_session_seamless_never_exto():
-    """Thinkorswim EXTO is a label. Schwab session is SEAMLESS."""
-    expected = {"exto": "DAY", "gtc_exto": "GOOD_TILL_CANCEL"}
-    for tif, duration in expected.items():
+def test_removed_tif_is_not_posted():
+    for tif in ("ext", "gtc_ext", "exto", "gtc_exto"):
+        with pytest.raises(OrderError, match="not available"):
+            normalize_ticket({
+                "symbol": "NVDA", "side": "buy", "order_type": "limit", "tif": tif, "shares": 100, "price": 180,
+            })
+    for tif, duration, session in (("day", "DAY", "NORMAL"), ("gtc", "GOOD_TILL_CANCEL", "NORMAL"), ("am", "DAY", "AM"), ("pm", "DAY", "PM")):
         built = equity_order(normalize_ticket({
             "symbol": "NVDA", "side": "buy", "order_type": "limit", "tif": tif, "shares": 100, "price": 180,
         })).build()
-        assert built["session"] == "SEAMLESS"
-        assert built["duration"] == duration
-        assert "EXTO" not in json.dumps(built)
+        assert built["duration"] == duration and built["session"] == session
+        assert "EXTO" not in json.dumps(built) and built["session"] != "SEAMLESS"
 
 
 def test_account_401_surfaces_the_schwab_error():
@@ -112,6 +117,8 @@ def test_review_does_not_place_and_send_is_the_only_schwab_call(monkeypatch):
         html = client.get("/").text
         assert html.index('id="order-entry"') < html.index('id="chart"')
         assert 'id="order-send"' in html and 'id="order-cancel"' in html
+        assert 'id="open-orders"' in html and 'id="chart-exit"' in html and "chart-btn" in html
+        assert "EXTO" not in html and "GTC EXT" not in html and '["ext"' not in html
         preview = client.post("/api/orders/preview", json={"symbol": "NVDA", "shares": 100})
         assert preview.status_code == 200
         body = preview.json()
@@ -152,9 +159,9 @@ def test_send_is_the_only_place_and_a_401_stays_a_schwab_error():
         place=place,
     )
     preview = book.preview({
-        "symbol": "NVDA", "shares": 100, "order_type": "limit", "tif": "exto", "price": 10,
+        "symbol": "NVDA", "shares": 100, "order_type": "limit", "tif": "am", "price": 10,
     })
-    assert preview["plan"]["session"] == "SEAMLESS" and preview["placed"] is False
+    assert preview["plan"]["session"] == "AM" and preview["placed"] is False
     with pytest.raises(OrderError, match="insufficient_scope") as caught:
         book.send(preview["preview_id"])
     assert "Not a stock or ETF" not in str(caught.value)
@@ -162,8 +169,115 @@ def test_send_is_the_only_place_and_a_401_stays_a_schwab_error():
     book.account = lambda: ("hash", "123")
     sent = book.send(preview["preview_id"])
     assert sent["placed"] is True and sent["order_id"] == 42
-    assert placed[0]["session"] == "SEAMLESS" and placed[0]["duration"] == "DAY"
+    assert placed[0]["session"] == "AM" and placed[0]["duration"] == "DAY"
     assert "EXTO" not in json.dumps(placed[0])
+
+
+def _schwab_response(status, body):
+    class Response:
+        status_code = status
+        text = json.dumps(body)
+
+        def json(self):
+            return body
+
+    return Response()
+
+
+def test_cancel_payload_uses_the_trade_client_and_skips_filled_orders():
+    calls = []
+
+    class Client:
+        def get_orders_for_account(self, account_hash, **_kwargs):
+            calls.append(("orders", account_hash))
+            return _schwab_response(200, [
+                {
+                    "orderId": 9,
+                    "status": "WORKING",
+                    "orderType": "LIMIT",
+                    "price": 180.5,
+                    "orderLegCollection": [{
+                        "instruction": "BUY",
+                        "quantity": 100,
+                        "instrument": {"symbol": "NVDA", "assetType": "EQUITY"},
+                    }],
+                },
+                {
+                    "orderId": 10,
+                    "status": "FILLED",
+                    "orderType": "MARKET",
+                    "orderLegCollection": [{
+                        "instruction": "SELL",
+                        "quantity": 5,
+                        "instrument": {"symbol": "AMD", "assetType": "EQUITY"},
+                    }],
+                },
+            ])
+
+        def get_order(self, order_id, account_hash):
+            calls.append(("get", order_id, account_hash))
+            status = "FILLED" if order_id == 10 else "WORKING"
+            return _schwab_response(200, {"orderId": order_id, "status": status})
+
+        def cancel_order(self, order_id, account_hash):
+            calls.append(("cancel", order_id, account_hash))
+            return _schwab_response(200, {})
+
+        def get_quotes(self, *_args, **_kwargs):
+            raise AssertionError("pending orders must not use quotes")
+
+    book = OrderBook(
+        mode=lambda: "schwab",
+        quote=lambda _symbol: {"lastPrice": 1},
+        account=lambda: ("HASH", "1"),
+        place=lambda *_args, **_kwargs: None,
+        client=lambda: Client(),
+    )
+    listed = book.working_orders()
+    assert listed["orders"] == [{
+        "order_id": 9,
+        "symbol": "NVDA",
+        "side": "BUY",
+        "order_type": "LIMIT",
+        "quantity": 100,
+        "price": 180.5,
+        "status": "WORKING",
+    }]
+    assert book.cancel(9) == {"canceled": True, "order_id": 9}
+    assert ("cancel", 9, "HASH") in calls
+    with pytest.raises(OrderError, match="filled"):
+        book.cancel(10)
+    assert ("cancel", 10, "HASH") not in calls
+
+
+def test_missing_trade_token_and_demo_do_not_cancel_live_orders():
+    from sources import TRADE_LOGIN_HINT
+
+    missing = OrderBook(
+        mode=lambda: "schwab",
+        quote=lambda _symbol: {"lastPrice": 1},
+        account=lambda: (_ for _ in ()).throw(AssertionError("no account call")),
+        place=lambda *_args, **_kwargs: None,
+        client=lambda: None,
+    )
+    with pytest.raises(OrderError, match="login-trade") as caught:
+        missing.working_orders()
+    assert "401" not in str(caught.value)
+    assert TRADE_LOGIN_HINT in str(caught.value)
+
+    def forbidden():
+        raise AssertionError("demo must not call Schwab")
+
+    demo = OrderBook(
+        mode=lambda: "demo",
+        quote=lambda _symbol: {"lastPrice": 1},
+        account=forbidden,
+        place=forbidden,
+        client=forbidden,
+    )
+    assert demo.working_orders() == {"orders": [], "mode": "demo"}
+    with pytest.raises(OrderError, match="does not cancel"):
+        demo.cancel(9)
 
 
 def test_email_logs_when_smtp_is_unset_and_sms_is_a_placeholder(caplog, monkeypatch):

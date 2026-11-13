@@ -463,6 +463,10 @@ class SendRequest(BaseModel):
     preview_id: str
 
 
+class CancelRequest(BaseModel):
+    order_id: int
+
+
 def _order_call(method, *args):
     book = screener.orders
     try:
@@ -491,6 +495,18 @@ def send_order(body: SendRequest) -> dict[str, Any]:
 @app.get("/api/orders/alerts")
 def order_alerts() -> dict[str, Any]:
     return {"alerts": screener.orders.drain_alerts()}
+
+
+@app.get("/api/orders/open")
+def open_orders() -> dict[str, Any]:
+    """Working orders on the trading account. Demo mode returns none and does not call Schwab."""
+    return _order_call(screener.orders.working_orders)
+
+
+@app.post("/api/orders/cancel")
+def cancel_order(body: CancelRequest) -> dict[str, Any]:
+    """Cancel one working order. A filled order is not canceled. Demo mode does not call Schwab."""
+    return _order_call(screener.orders.cancel, body.order_id)
 
 
 @app.get("/api/candles")

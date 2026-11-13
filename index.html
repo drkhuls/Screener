@@ -61,8 +61,9 @@
   th { position: sticky; top: 0; background: #202020; color: #bbb; font-weight: 600; cursor: pointer; user-select: none; }
   th:hover { color: #fff; }
   th .arrow { color: var(--muted); font-size: 10px; margin-left: 3px; }
-  tbody tr { cursor: pointer; }
+  tbody tr { cursor: pointer; -webkit-touch-callout: none; }
   tbody tr:hover { background: #1f1f1f; }
+  .chart-btn { margin-left: 8px; min-height: 32px; padding: 4px 10px; }
   tbody tr.selected { background: var(--sel); }
   td.sym { font-weight: 600; }
   td.sym small { color: var(--muted); font-weight: 400; margin-left: 6px; }
@@ -125,17 +126,39 @@
   .order-actions { display: flex; justify-content: flex-end; gap: 8px; }
   #order-send.buy { background: #0f7a45; border-color: #0f7a45; color: #fff; }
   #order-send.sell { background: #b42318; border-color: #b42318; color: #fff; }
+  .ticker-peek { margin: 0; padding: 10px 12px; border-top: 1px solid var(--line); font-size: 15px; }
+  .ticker-peek b { margin-right: 8px; }
+  #open-orders { flex: 0 0 auto; }
+  #open-orders h2 { margin: 0; padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--line); background: #202020; }
+  .open-orders { width: 100%; border-collapse: collapse; }
+  .open-orders th, .open-orders td { padding: 8px; text-align: left; border-bottom: 1px solid #222; }
+  .open-orders .cancel-order { min-height: 36px; }
+  #open-orders .order-hint { padding: 8px 10px; }
   #toasts { position: fixed; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; z-index: 30; max-width: min(380px, calc(100% - 28px)); }
   .toast { background: #202020; border: 1px solid #444; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.45); cursor: pointer; line-height: 1.4; }
   .toast.error { border-color: #ef5350; }
-  #chart { flex: 1; min-height: 360px; position: relative; }
+  #chart { flex: 1; min-height: 360px; position: relative; touch-action: pan-x; }
   #chart-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); pointer-events: none; z-index: 2; }
+  #chart-exit[hidden] { display: none; }
+  body.chart-full { overflow: hidden; height: 100vh; }
+  body.chart-full header, body.chart-full #token-banner, body.chart-full #errors, body.chart-full .left { display: none; }
+  body.chart-full main { display: block; padding: 0; height: 100vh; }
+  body.chart-full .chart-box { position: fixed; inset: 0; z-index: 40; display: flex; min-height: 100vh; background: #121212; }
+  body.chart-full #chart { min-height: 0; height: auto; flex: 1; }
 
   @media (max-width: 980px) {
     body { height: auto; }
-    main { grid-template-columns: 1fr; height: auto; }
-    .table-wrap { max-height: 60vh; }
-    #chart { height: 520px; }
+    header { flex-wrap: wrap; gap: 8px; }
+    main { grid-template-columns: 1fr; height: auto; padding: 8px; }
+    .left, .order-row, .watchlist, .add-ticker, .chart-head { flex-wrap: wrap; }
+    .table-wrap { max-height: 70vh; -webkit-overflow-scrolling: touch; }
+    button, label.file-btn, .add-ticker input, #order-symbol, #order-price, #order-shares, .chart-btn, .pager button, .cancel-order, #chart-exit {
+      min-height: 44px;
+      font-size: 16px;
+    }
+    th, td { padding: 10px 8px; }
+    #chart { height: 70vh; }
+    button.scan { grid-template-columns: 1fr minmax(96px, 34%); min-height: 48px; }
   }
 </style>
 </head>
@@ -172,6 +195,7 @@
         </table>
       </div>
       <div id="pager" class="pager" hidden></div>
+      <p id="ticker-peek" class="ticker-peek">Tap a ticker for price and percent change.</p>
     </section>
     <form id="add-ticker" class="box add-ticker">
       <input id="add-symbol" type="text" maxlength="12" placeholder="Add ticker" autocomplete="off" spellcheck="false" aria-label="Add ticker">
@@ -208,6 +232,10 @@
         <p class="order-hint">Ticker only. Two Schwab apps: quotes use <code>python backend.py login</code>. Send uses the trading app. From /root/Screener run <code>python backend.py login-trade --manual</code>. The Screener service reads the new trade token on its own. Use <code>sudo systemctl restart Screener</code> only after .env changes.</p>
       </div>
     </section>
+    <section class="box" id="open-orders">
+      <h2>Pending orders</h2>
+      <div id="open-orders-body"><p class="order-hint">Loading…</p></div>
+    </section>
   </div>
   <section class="box chart-box">
     <div class="chart-head">
@@ -215,11 +243,12 @@
       <div class="legend" id="legend"></div>
       <span id="ohlc"></span>
       <div class="chart-actions">
+        <button type="button" id="chart-exit" hidden>Exit</button>
         <button type="button" id="bw" aria-pressed="false" title="Hollow up candles and filled down candles">B&amp;W</button>
         <button type="button" id="theme">Dark mode</button>
       </div>
     </div>
-    <div id="chart"><div id="chart-msg">Click a row to chart it</div></div>
+    <div id="chart"><div id="chart-msg">Chart or hold a ticker</div></div>
   </section>
 </main>
 <div id="order-page" class="order-page" hidden>
@@ -400,7 +429,7 @@ function renderTable() {
   const page = pageOf(stocks);
   $("rows").innerHTML = page.rows.map((s) => `
     <tr data-symbol="${s.symbol}" class="${s.symbol === state.selected ? "selected" : ""}">
-      <td class="sym">${s.symbol}${s.group ? `<small>${s.group}</small>` : ""}</td>
+      <td class="sym">${s.symbol}${s.group ? `<small>${s.group}</small>` : ""}<button type="button" class="chart-btn">Chart</button></td>
       <td${s.extended_hours ? ` class="ext" title="Extended-hours trade · regular close ${fmtPrice(s.regular_price)}"` : ""}>${fmtPrice(s.price)}</td>
       <td class="${signClass(s.pct_from_open)}">${fmtPct(s.pct_from_open)}</td>
       <td class="${signClass(s.pct_from_close)}">${fmtPct(s.pct_from_close)}</td>
@@ -465,14 +494,6 @@ async function loadScreener() {
   renderTable();
   renderStatus();
   updateLiveBar();
-  if (!state.selected && state.data.stocks.length) {
-    const listed = listedStocks(state.data.stocks);
-    if (listed.length) {
-      state.selected = listed[0].symbol;
-      renderTable();
-      loadChart(state.selected);
-    }
-  }
 }
 
 async function poll() {
@@ -559,14 +580,60 @@ $("pager").addEventListener("click", (event) => {
   renderTable();
 });
 
-$("rows").addEventListener("click", (e) => {
-  const tr = e.target.closest("tr");
-  if (!tr) return;
-  state.selected = tr.dataset.symbol;
-  localStorage.setItem("screener.symbol", state.selected);
+function showPeek(symbol) {
+  const stock = state.data && state.data.stocks.find((row) => row.symbol === symbol);
+  state.selected = symbol;
+  localStorage.setItem("screener.symbol", symbol);
   renderTable();
-  loadChart(state.selected);
+  const peek = $("ticker-peek");
+  if (!stock) {
+    peek.textContent = symbol;
+    return;
+  }
+  peek.innerHTML = `<b>${stock.symbol}</b> ${fmtPrice(stock.price)} <span class="${signClass(stock.pct_from_close)}">${fmtPct(stock.pct_from_close)}</span>`;
+}
+
+function openChart(symbol) {
+  document.body.classList.add("chart-full");
+  $("chart-exit").hidden = false;
+  state.selected = symbol;
+  localStorage.setItem("screener.symbol", symbol);
+  renderTable();
+  loadChart(symbol);
+}
+
+function closeChart() {
+  document.body.classList.remove("chart-full");
+  $("chart-exit").hidden = true;
+}
+
+$("rows").addEventListener("click", (event) => {
+  const tr = event.target.closest("tr");
+  if (!tr) return;
+  if (event.target.closest(".chart-btn")) {
+    openChart(tr.dataset.symbol);
+    return;
+  }
+  showPeek(tr.dataset.symbol);
 });
+
+let pressTimer = 0;
+$("rows").addEventListener("touchstart", (event) => {
+  const tr = event.target.closest("tr");
+  if (!tr || event.target.closest(".chart-btn") || event.touches.length !== 1) return;
+  const symbol = tr.dataset.symbol;
+  pressTimer = window.setTimeout(() => {
+    pressTimer = 0;
+    openChart(symbol);
+  }, 550);
+}, { passive: true });
+function clearPress() {
+  if (pressTimer) window.clearTimeout(pressTimer);
+  pressTimer = 0;
+}
+$("rows").addEventListener("touchend", clearPress);
+$("rows").addEventListener("touchmove", clearPress);
+$("rows").addEventListener("touchcancel", clearPress);
 
 /* Section C: chart */
 const chart = LightweightCharts.createChart($("chart"), {
@@ -709,26 +776,89 @@ renderLegend();
 applyTheme();
 
 let chartRequest = 0;
+const chartCache = new Map();
+const THREE_MONTH_BARS = 63;
+
+function prefetchChart(symbol) {
+  if (!symbol || chartCache.has(symbol)) return;
+  const pending = fetch("/api/candles?symbol=" + encodeURIComponent(symbol), { cache: "no-store" })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("chart");
+      const data = await res.json();
+      chartCache.set(symbol, data);
+      return data;
+    })
+    .catch(() => {
+      chartCache.delete(symbol);
+      return null;
+    });
+  chartCache.set(symbol, pending);
+}
+
 async function loadChart(symbol) {
   const request = ++chartRequest;
   $("chart-symbol").textContent = symbol;
   $("chart-msg").textContent = "Loading " + symbol + "…";
+  prefetchChart(symbol);
   try {
-    const res = await fetch("/api/candles?symbol=" + encodeURIComponent(symbol));
-    if (!res.ok) throw new Error((await res.json()).detail || res.status);
-    const data = await res.json();
+    const cached = chartCache.get(symbol);
+    const data = cached && typeof cached.then === "function" ? await cached : cached;
     if (request !== chartRequest) return;
+    if (!data || !data.candles) throw new Error("no bars");
     state.chartBars = data.candles;
     state.chartVolume = data.volume;
     candleSeries.setData(data.candles);
     paintChart();
     const n = data.candles.length;
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 130), to: n + 8 });
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - THREE_MONTH_BARS), to: n + 8 });
     $("chart-msg").textContent = "";
+    const list = state.data ? listedStocks(state.data.stocks) : [];
+    const index = list.findIndex((row) => row.symbol === symbol);
+    if (list.length > 1 && index >= 0) prefetchChart(list[(index + 1) % list.length].symbol);
   } catch (err) {
     if (request === chartRequest) $("chart-msg").textContent = `Chart unavailable: ${err.message}`;
   }
 }
+
+function stepChart(direction) {
+  if (!state.data) return;
+  const list = listedStocks(state.data.stocks);
+  if (!list.length) return;
+  const current = $("chart-symbol").textContent;
+  let index = list.findIndex((row) => row.symbol === current);
+  if (index < 0) index = 0;
+  const next = (index + direction + list.length) % list.length;
+  state.page = Math.floor(next / PAGE_SIZE) + 1;
+  openChart(list[next].symbol);
+}
+
+let chartTouch = null;
+$("chart").addEventListener("touchstart", (event) => {
+  if (!document.body.classList.contains("chart-full") || event.touches.length !== 1) return;
+  const touch = event.touches[0];
+  chartTouch = { x: touch.clientX, y: touch.clientY, id: touch.identifier };
+}, { passive: true });
+$("chart").addEventListener("touchmove", (event) => {
+  if (!chartTouch || !document.body.classList.contains("chart-full")) return;
+  const touch = [...event.touches].find((item) => item.identifier === chartTouch.id);
+  if (!touch) return;
+  const dx = touch.clientX - chartTouch.x;
+  const dy = touch.clientY - chartTouch.y;
+  if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) event.preventDefault();
+}, { passive: false });
+$("chart").addEventListener("touchend", (event) => {
+  if (!chartTouch) return;
+  const touch = [...event.changedTouches].find((item) => item.identifier === chartTouch.id);
+  const start = chartTouch;
+  chartTouch = null;
+  if (!touch || !document.body.classList.contains("chart-full")) return;
+  const dx = touch.clientX - start.x;
+  const dy = touch.clientY - start.y;
+  if (Math.abs(dy) < 48 || Math.abs(dy) < Math.abs(dx)) return;
+  stepChart(dy < 0 ? 1 : -1);
+});
+$("chart").addEventListener("touchcancel", () => { chartTouch = null; });
+$("chart-exit").addEventListener("click", closeChart);
 
 function updateLiveBar() {
   const bars = state.chartBars;
@@ -754,7 +884,6 @@ chart.subscribeCrosshairMove((param) => {
   $("ohlc").textContent = bar ? `O ${bar.open.toFixed(2)}  H ${bar.high.toFixed(2)}  L ${bar.low.toFixed(2)}  C ${bar.close.toFixed(2)}` : "";
 });
 
-if (state.selected) loadChart(state.selected);
 poll();
 
 /* Order entry. Review opens the details page. Send is the only call that can reach Schwab. */
@@ -766,10 +895,6 @@ const ORDER_TYPES = [
 const TIF = [
   ["day", "Day", ""],
   ["gtc", "GTC", "Good Till Canceled"],
-  ["ext", "EXT", "Extended"],
-  ["gtc_ext", "GTC EXT", "Good Till Canceled Extended"],
-  ["exto", "EXTO", "Extended Hours Overnight"],
-  ["gtc_exto", "GTC EXTO", "Good Till Canceled Extended Hours Overnight"],
   ["am", "AM", ""],
   ["pm", "PM", ""],
 ];
@@ -949,13 +1074,71 @@ $("order-send").addEventListener("click", async () => {
     }
     closeOrderPage();
     if (data.alert) popup(data.alert.kind, data.alert.message);
+    await loadOpenOrders();
   } catch (err) {
     $("order-note").textContent = "Order send failed";
     $("order-send").disabled = false;
   }
 });
 
+function money(value) {
+  return value == null ? "—" : Number(value).toFixed(2);
+}
+
+function renderOpenOrders(data) {
+  const box = $("open-orders-body");
+  const orders = data.orders || [];
+  if (!orders.length) {
+    box.innerHTML = `<p class="order-hint">${data.mode === "demo" ? "Demo mode has no live orders." : "No pending orders."}</p>`;
+    return;
+  }
+  box.innerHTML = `<table class="open-orders"><thead><tr><th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody>${
+    orders.map((order) => `<tr>
+      <td>${order.symbol}</td>
+      <td>${order.side}</td>
+      <td>${order.order_type}</td>
+      <td>${order.quantity == null ? "—" : order.quantity}</td>
+      <td>${money(order.price)}</td>
+      <td>${order.status}</td>
+      <td><button type="button" class="cancel-order" data-order-id="${order.order_id}">Cancel</button></td>
+    </tr>`).join("")
+  }</tbody></table>`;
+}
+
+async function loadOpenOrders() {
+  try {
+    const res = await fetch("/api/orders/open", { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      $("open-orders-body").innerHTML = `<p class="order-hint">${orderErrorText(data)}</p>`;
+      return;
+    }
+    renderOpenOrders(data);
+  } catch (err) {
+    $("open-orders-body").innerHTML = `<p class="order-hint">Pending orders unavailable</p>`;
+  }
+}
+
+$("open-orders").addEventListener("click", async (event) => {
+  const button = event.target.closest(".cancel-order");
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  try {
+    const res = await fetch("/api/orders/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_id: Number(button.dataset.orderId) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) popup("error", orderErrorText(data));
+  } catch (err) {
+    popup("error", "Cancel failed");
+  }
+  await loadOpenOrders();
+});
+
 renderOrderMenus();
+loadOpenOrders();
 
 async function pollAlerts() {
   try {

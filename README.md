@@ -93,7 +93,9 @@ Edit `universe.json`. Groups are labels shown next to each ticker; the screener 
 
 ## Order entry
 
-The row under the table is Buy (green, toggles to red Sell), order type, time in force, a share box, and a ticker. Shares start at 100 and the up/down controls change them by 10. The ticker box takes one symbol, not a sentence. Limit and Stop show a price field. Market and Stop are Day only. Limit can be Day, GTC, EXT, GTC EXT, EXTO, GTC EXTO, AM, or PM. EXTO and GTC EXTO are hidden unless the order type is Limit.
+The row under the table is Buy (green, toggles to red Sell), order type, time in force, a share box, and a ticker. Shares start at 100 and the up/down controls change them by 10. The ticker box takes one symbol, not a sentence. Limit and Stop show a price field. Market and Stop are Day only. Limit is Day, GTC, AM, or PM. Extended and overnight time in force are not offered.
+
+Pending orders sit under that row: symbol, side, type, quantity, price, and status. Cancel sends a cancel for that working order on the trading app. The list refreshes after Send and after cancel. Demo mode shows no live orders and does not cancel. A missing trade token shows the login-trade hint.
 
 Review opens a details page and reads a quote. It does not look up the account and it does not call `place_order`. Send and Cancel are on that page. Cancel sends nothing. Send is the only step that can reach Schwab. Demo mode describes the order and does not call Schwab.
 
@@ -103,10 +105,6 @@ Review opens a details page and reads a quote. It does not look up the account a
 | --- | --- | --- |
 | Day | `DAY` | `NORMAL` |
 | GTC | `GOOD_TILL_CANCEL` | `NORMAL` |
-| EXT | `DAY` | `SEAMLESS` |
-| GTC EXT | `GOOD_TILL_CANCEL` | `SEAMLESS` |
-| EXTO | `DAY` | `SEAMLESS` |
-| GTC EXTO | `GOOD_TILL_CANCEL` | `SEAMLESS` |
 | AM | `DAY` | `AM` |
 | PM | `DAY` | `PM` |
 

@@ -2,8 +2,8 @@
 
 The ticket is a side, an order type, a time in force, a share count, and a ticker.
 Limit and stop also carry a price. Time in force is two Schwab fields: duration
-and session. EXTO and GTC EXTO are thinkorswim labels. The orders API accepts
-only NORMAL, AM, PM, and SEAMLESS, so those two post session SEAMLESS.
+and session. The public orders API has no overnight session, so EXT, GTC EXT,
+EXTO, and GTC EXTO are not offered and are never posted.
 """
 
 from __future__ import annotations
@@ -28,12 +28,24 @@ SYMBOL = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 TIF = {
     "day": ("DAY", "NORMAL", "Day"),
     "gtc": ("GOOD_TILL_CANCEL", "NORMAL", "GTC"),
-    "ext": ("DAY", "SEAMLESS", "EXT"),
-    "gtc_ext": ("GOOD_TILL_CANCEL", "SEAMLESS", "GTC EXT"),
-    "exto": ("DAY", "SEAMLESS", "EXTO"),
-    "gtc_exto": ("GOOD_TILL_CANCEL", "SEAMLESS", "GTC EXTO"),
     "am": ("DAY", "AM", "AM"),
     "pm": ("DAY", "PM", "PM"),
+}
+REMOVED_TIF = {"ext", "gtc_ext", "exto", "gtc_exto"}
+OPEN_STATUSES = {
+    "WORKING",
+    "QUEUED",
+    "ACCEPTED",
+    "PENDING_ACTIVATION",
+    "NEW",
+    "AWAITING_PARENT_ORDER",
+    "AWAITING_CONDITION",
+    "AWAITING_STOP_CONDITION",
+    "AWAITING_MANUAL_REVIEW",
+    "AWAITING_UR_OUT",
+    "AWAITING_RELEASE_TIME",
+    "PENDING_ACKNOWLEDGEMENT",
+    "PENDING_REPLACE",
 }
 LIMIT_TIF = list(TIF)
 DAY_ONLY = ["day"]
@@ -75,7 +87,7 @@ class OrderTicket:
 
 
 def tif_choices(order_type: str) -> list[str]:
-    """Market and stop are Day. Limit has the full menu, including EXTO."""
+    """Market and stop are Day. Limit is Day, GTC, AM, and PM."""
     if order_type == "limit":
         return list(LIMIT_TIF)
     return list(DAY_ONLY)
@@ -99,6 +111,8 @@ def normalize_ticket(raw: dict[str, Any]) -> OrderTicket:
     if order_type not in ORDER_TYPES:
         raise OrderError("Order type must be market, limit, or stop")
     tif = str(raw.get("tif") or "day").strip().lower()
+    if tif in REMOVED_TIF:
+        raise OrderError("Extended and overnight time in force are not available")
     if tif not in tif_choices(order_type):
         if order_type == "market":
             raise OrderError("Market orders are Day only")
@@ -361,6 +375,68 @@ class OrderBook:
                 self.pending.append(alert)
         return alert
 
+    def working_orders(self) -> dict[str, Any]:
+        """Open orders on the trading account. Demo mode does not call Schwab."""
+        if self.mode() == "demo":
+            return {"orders": [], "mode": "demo"}
+        client = self.client()
+        if client is None:
+            raise OrderError(TRADE_LOGIN_HINT)
+        account_hash, _account_number = self.account()
+        try:
+            response = client.get_orders_for_account(account_hash, max_results=50)
+        except OrderError:
+            raise
+        except Exception as exc:
+            raise OrderError(f"Schwab orders failed: {exc}") from exc
+        _check(response, "Schwab orders")
+        try:
+            body = response.json()
+        except Exception as exc:
+            raise OrderError(f"Schwab orders failed: {exc}") from exc
+        orders = []
+        for item in body if isinstance(body, list) else []:
+            if not isinstance(item, dict) or item.get("status") not in OPEN_STATUSES:
+                continue
+            public = _public_order(item)
+            if public is not None:
+                orders.append(public)
+        return {"orders": orders, "mode": "schwab"}
+
+    def cancel(self, order_id: int) -> dict[str, Any]:
+        """Cancel one working order. A filled order is left alone. Demo mode does not call Schwab."""
+        if self.mode() == "demo":
+            raise OrderError("Demo mode does not cancel live orders")
+        client = self.client()
+        if client is None:
+            raise OrderError(TRADE_LOGIN_HINT)
+        account_hash, _account_number = self.account()
+        try:
+            current = client.get_order(int(order_id), account_hash)
+        except OrderError:
+            raise
+        except Exception as exc:
+            raise OrderError(f"Schwab order failed: {exc}") from exc
+        _check(current, "Schwab order")
+        try:
+            body = current.json()
+        except Exception as exc:
+            raise OrderError(f"Schwab order failed: {exc}") from exc
+        status = body.get("status") if isinstance(body, dict) else ""
+        if status == "FILLED":
+            raise OrderError("That order is already filled")
+        if status not in OPEN_STATUSES:
+            raise OrderError("That order is no longer working")
+        try:
+            response = client.cancel_order(int(order_id), account_hash)
+        except OrderError:
+            raise
+        except Exception as exc:
+            raise OrderError(f"Schwab cancel failed: {exc}") from exc
+        if getattr(response, "status_code", 200) >= 400:
+            _check(response, "Schwab cancel")
+        return {"canceled": True, "order_id": int(order_id)}
+
     def drain_alerts(self) -> list[dict[str, str]]:
         with self.lock:
             items = list(self.pending)
@@ -455,6 +531,44 @@ class OrderBook:
                     "reject_message": f"Schwab rejected the {ticket.symbol} order.",
                 }
             )
+
+
+def _number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _public_order(order: dict[str, Any]) -> dict[str, Any] | None:
+    """Fields shown under order entry. No account hash and no token."""
+    legs = order.get("orderLegCollection") or []
+    leg = legs[0] if isinstance(legs, list) and legs and isinstance(legs[0], dict) else {}
+    instrument = leg.get("instrument") if isinstance(leg.get("instrument"), dict) else {}
+    symbol = str(instrument.get("symbol") or "").upper()
+    try:
+        order_id = int(order.get("orderId"))
+    except (TypeError, ValueError):
+        return None
+    if not symbol:
+        return None
+    quantity = leg.get("quantity", order.get("quantity"))
+    if isinstance(quantity, bool) or not isinstance(quantity, (int, float)):
+        quantity = None
+    price = _number(order.get("price"))
+    if price is None:
+        price = _number(order.get("stopPrice"))
+    return {
+        "order_id": order_id,
+        "symbol": symbol,
+        "side": str(leg.get("instruction") or ""),
+        "order_type": str(order.get("orderType") or ""),
+        "quantity": quantity,
+        "price": price,
+        "status": str(order.get("status") or ""),
+    }
 
 
 def _order_id(headers: Any) -> int | None:
