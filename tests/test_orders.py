@@ -120,6 +120,9 @@ def test_review_does_not_place_and_send_is_the_only_schwab_call(monkeypatch):
         html = client.get("/").text
         assert html.index('id="order-entry"') < html.index('id="quick-order"') < html.index('id="open-orders"')
         assert ">Quick order<" in html and 'id="quick-send"' in html
+        ticket = html[html.index('id="quick-ticket"'):html.index('id="quick-type-market"')]
+        assert 'id="quick-side"' in ticket and 'id="quick-symbol"' in ticket and 'id="quick-send"' in ticket
+        assert 'data-risk="0.25" aria-pressed="true"' in html
         assert html.index('id="order-entry"') < html.index('id="chart"')
         assert 'id="order-send"' in html and 'id="order-cancel"' in html
         assert 'id="open-orders"' in html and 'id="chart-exit"' in html and "chart-btn" in html

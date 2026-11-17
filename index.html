@@ -101,6 +101,7 @@
   #quick-order h2 { margin: 0; padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--line); background: #202020; }
   #quick-order button[aria-pressed="true"] { border-color: #5fd3c3; }
   #quick-dollars, #quick-stop, #quick-symbol, #quick-limit { flex: 1; min-width: 0; background: #0b0b0b; color: var(--text); border: 1px solid #555; border-radius: 4px; padding: 7px 8px; font: inherit; }
+  #quick-send { flex: 0 0 auto; }
   #quick-limit-row[hidden] { display: none; }
   .quick-label { min-width: 96px; color: var(--muted); }
   .menu { position: relative; }
@@ -240,8 +241,10 @@
     </section>
     <section class="box" id="quick-order">
       <h2>Quick order</h2>
-      <div class="order-row">
+      <div class="order-row" id="quick-ticket">
         <button type="button" id="quick-side" class="buy" aria-pressed="false">Buy</button>
+        <input id="quick-symbol" type="text" maxlength="12" placeholder="Ticker" autocomplete="off" spellcheck="false" aria-label="Quick ticker">
+        <button type="button" id="quick-send" class="buy">Send</button>
       </div>
       <div class="order-row">
         <button type="button" id="quick-type-market" aria-pressed="true">Market</button>
@@ -253,22 +256,16 @@
         <button type="button" data-risk="1" aria-pressed="false">1%</button>
         <button type="button" data-risk="0.5" aria-pressed="false">0.5%</button>
         <button type="button" data-risk="0.33" aria-pressed="false">0.33%</button>
-        <button type="button" data-risk="0.25" aria-pressed="false">0.25%</button>
+        <button type="button" data-risk="0.25" aria-pressed="true">0.25%</button>
         <input id="quick-dollars" inputmode="decimal" placeholder="Risk $" autocomplete="off" aria-label="Dollar risk">
       </div>
       <div class="order-row">
         <span class="quick-label">Custom stop</span>
         <input id="quick-stop" inputmode="decimal" placeholder="Custom stop" autocomplete="off" aria-label="Custom stop">
       </div>
-      <div class="order-row">
-        <input id="quick-symbol" type="text" maxlength="12" placeholder="Ticker" autocomplete="off" spellcheck="false" aria-label="Quick ticker">
-      </div>
       <div class="order-row" id="quick-limit-row" hidden>
         <span class="quick-label">Limit</span>
         <input id="quick-limit" inputmode="decimal" placeholder="Limit" autocomplete="off" aria-label="Limit price">
-      </div>
-      <div class="order-row">
-        <button type="button" id="quick-send" class="buy">Send</button>
       </div>
     </section>
     <section class="box" id="open-orders">
@@ -1176,7 +1173,7 @@ $("open-orders").addEventListener("click", async (event) => {
   await loadOpenOrders();
 });
 
-const quick = { side: "buy", orderType: "market", tif: "day", risk: "" };
+const quick = { side: "buy", orderType: "market", tif: "day", risk: "0.25" };
 
 function renderQuick() {
   const side = $("quick-side");
@@ -1210,6 +1207,20 @@ $("quick-risk").addEventListener("click", (event) => {
   renderQuick();
 });
 $("quick-dollars").addEventListener("input", renderQuick);
+
+let chartFromTicket = 0;
+function chartTicker(value) {
+  const symbol = value.trim().toUpperCase();
+  window.clearTimeout(chartFromTicket);
+  if (!symbol || !/^[A-Z][A-Z0-9.\-]{0,9}$/.test(symbol)) return;
+  chartFromTicket = window.setTimeout(() => {
+    state.selected = symbol;
+    if (state.data) renderTable();
+    loadChart(symbol);
+  }, 200);
+}
+$("order-symbol").addEventListener("input", () => chartTicker($("order-symbol").value));
+$("quick-symbol").addEventListener("input", () => chartTicker($("quick-symbol").value));
 
 $("quick-send").addEventListener("click", async () => {
   if ($("quick-send").disabled) return;
