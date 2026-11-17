@@ -550,7 +550,7 @@ def _run_login(path: Path, api_key: str, app_secret: str, callback_url: str, man
     os.chmod(path, 0o600)
     status = token_status.token_status(token_status.read_login_time(path), datetime.now(ET))
     print(f"Token written to {path}; refresh token expires {status['expires_at']}")
-    print("A running Screener process picks this file up within a few seconds.")
+    print("A running screener process picks this file up within a few seconds.")
 
 
 def login(manual: bool = False) -> None:
