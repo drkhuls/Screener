@@ -467,6 +467,17 @@ class CancelRequest(BaseModel):
     order_id: int
 
 
+class QuickRequest(BaseModel):
+    side: str = "buy"
+    order_type: str = "market"
+    tif: str = "day"
+    symbol: str = ""
+    risk_percent: Any = None
+    risk_dollars: Any = None
+    stop: Any = None
+    price: Any = None
+
+
 def _order_call(method, *args):
     book = screener.orders
     try:
@@ -490,6 +501,12 @@ def preview_order(body: PreviewRequest) -> dict[str, Any]:
 def send_order(body: SendRequest) -> dict[str, Any]:
     """Place the reviewed order. Demo mode returns it and does not call Schwab."""
     return _order_call(screener.orders.send, body.preview_id)
+
+
+@app.post("/api/orders/quick")
+def quick_order(body: QuickRequest) -> dict[str, Any]:
+    """Size and place a bracket. Demo mode does not call Schwab."""
+    return _order_call(screener.orders.quick_send, body.model_dump())
 
 
 @app.get("/api/orders/alerts")

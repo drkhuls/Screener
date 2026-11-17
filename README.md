@@ -95,7 +95,9 @@ Edit `universe.json`. Groups are labels shown next to each ticker; the screener 
 
 The row under the table is Buy (green, toggles to red Sell), order type, time in force, a share box, and a ticker. Shares start at 100 and the up/down controls change them by 10. The ticker box takes one symbol, not a sentence. Limit and Stop show a price field. Market and Stop are Day only. Limit is Day, GTC, AM, or PM. Extended and overnight time in force are not offered.
 
-Pending orders sit under that row: symbol, side, type, quantity, price, and status. Cancel sends a cancel for that working order on the trading app. The list refreshes after Send and after cancel. Demo mode shows no live orders and does not cancel. A missing trade token shows the login-trade hint.
+Quick order sits under that ticket. Buy or Sell, Market or Limit, and Day or GTC. Risk is 1%, 0.5%, 0.33%, 0.25% of account equity, or a dollar amount when that box has a number. Shares are `floor(risk / abs(entry - stop))` at Send. The stop is the custom price, or the low of day minus $0.10 on a buy and the high of day plus $0.10 on a sell. Send places a market or limit entry plus a stop-market child (`TRIGGER`, session `NORMAL`) on the trading app. Demo mode does not call Schwab.
+
+Pending orders sit under Quick order: symbol, side, type, quantity, price, and status. Cancel sends a cancel for that working order on the trading app. The list refreshes after Send and after cancel. Demo mode shows no live orders and does not cancel. A missing trade token shows the login-trade hint.
 
 Review opens a details page and reads a quote. It does not look up the account and it does not call `place_order`. Send and Cancel are on that page. Cancel sends nothing. Send is the only step that can reach Schwab. Demo mode describes the order and does not call Schwab.
 

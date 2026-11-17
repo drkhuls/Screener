@@ -12,8 +12,11 @@ from alerts import dispatch_order_alert  # noqa: E402
 from orders import (  # noqa: E402
     OrderBook,
     OrderError,
+    bracket_order,
+    build_quick,
     equity_order,
     normalize_ticket,
+    quick_shares,
     read_account,
     tif_choices,
 )
@@ -115,6 +118,8 @@ def test_review_does_not_place_and_send_is_the_only_schwab_call(monkeypatch):
     monkeypatch.setattr("orders.OrderBook._place", place)
     with TestClient(backend.app) as client:
         html = client.get("/").text
+        assert html.index('id="order-entry"') < html.index('id="quick-order"') < html.index('id="open-orders"')
+        assert ">Quick order<" in html and 'id="quick-send"' in html
         assert html.index('id="order-entry"') < html.index('id="chart"')
         assert 'id="order-send"' in html and 'id="order-cancel"' in html
         assert 'id="open-orders"' in html and 'id="chart-exit"' in html and "chart-btn" in html
@@ -278,6 +283,141 @@ def test_missing_trade_token_and_demo_do_not_cancel_live_orders():
     assert demo.working_orders() == {"orders": [], "mode": "demo"}
     with pytest.raises(OrderError, match="does not cancel"):
         demo.cancel(9)
+
+
+QUICK_QUOTE = {"lastPrice": "100", "lowPrice": "90", "highPrice": "110"}
+
+
+def test_quick_share_math_and_dollar_risk_replaces_percent():
+    from decimal import Decimal
+
+    assert quick_shares(Decimal("100"), Decimal("100"), Decimal("89.90")) == 9
+    assert quick_shares(Decimal("50"), Decimal("100"), Decimal("89.90")) == 4
+    assert quick_shares(Decimal("33"), Decimal("100"), Decimal("89.90")) == 3
+    assert quick_shares(Decimal("25"), Decimal("100"), Decimal("89.90")) == 2
+    with pytest.raises(OrderError, match="Share size is 0"):
+        quick_shares(Decimal("5"), Decimal("100"), Decimal("89.90"))
+    percent = build_quick({"symbol": "NVDA", "side": "buy", "risk_percent": "1"}, QUICK_QUOTE, 10000)
+    assert percent.shares == 9 and percent.risk == 100
+    dollars = build_quick(
+        {"symbol": "NVDA", "side": "buy", "risk_percent": "1", "risk_dollars": "20"},
+        QUICK_QUOTE,
+        10000,
+    )
+    assert dollars.shares == 1 and dollars.risk == 20
+    half = build_quick({"symbol": "NVDA", "side": "buy", "risk_percent": "0.5"}, QUICK_QUOTE, 10000)
+    assert half.shares == 4 and half.risk == 50
+
+
+def test_default_stops_and_custom_stop_override():
+    buy = build_quick({"symbol": "NVDA", "side": "buy", "risk_percent": "1"}, QUICK_QUOTE, 10000)
+    sell = build_quick({"symbol": "NVDA", "side": "sell", "risk_percent": "1"}, QUICK_QUOTE, 10000)
+    custom = build_quick(
+        {"symbol": "NVDA", "side": "buy", "risk_percent": "1", "stop": "95"},
+        QUICK_QUOTE,
+        10000,
+    )
+    assert buy.stop == 89.9 and buy.entry == 100
+    assert sell.stop == 110.1 and sell.entry == 100
+    assert custom.stop == 95 and custom.shares == 20
+    built = bracket_order(buy).build()
+    assert built == {
+        "session": "NORMAL",
+        "duration": "DAY",
+        "orderType": "MARKET",
+        "orderLegCollection": [{
+            "instruction": "BUY",
+            "instrument": {"assetType": "EQUITY", "symbol": "NVDA"},
+            "quantity": 9,
+        }],
+        "orderStrategyType": "TRIGGER",
+        "childOrderStrategies": [{
+            "session": "NORMAL",
+            "duration": "DAY",
+            "orderType": "STOP",
+            "stopPrice": "89.90",
+            "orderLegCollection": [{
+                "instruction": "SELL",
+                "instrument": {"assetType": "EQUITY", "symbol": "NVDA"},
+                "quantity": 9,
+            }],
+            "orderStrategyType": "SINGLE",
+        }],
+    }
+    assert "EXTO" not in json.dumps(built)
+    sell_built = bracket_order(sell).build()
+    assert sell_built["childOrderStrategies"][0]["orderLegCollection"][0]["instruction"] == "BUY"
+    assert sell_built["childOrderStrategies"][0]["stopPrice"] == "110.10"
+    gtc = build_quick({"symbol": "NVDA", "side": "buy", "tif": "gtc", "risk_percent": "1"}, QUICK_QUOTE, 10000)
+    gtc_built = bracket_order(gtc).build()
+    assert gtc_built["duration"] == "GOOD_TILL_CANCEL"
+    assert gtc_built["childOrderStrategies"][0]["duration"] == "GOOD_TILL_CANCEL"
+    assert gtc_built["session"] == "NORMAL"
+
+
+def test_quick_send_refuses_when_last_is_through_the_stop_and_places_nothing():
+    placed = []
+
+    def place(*_args, **_kwargs):
+        placed.append(True)
+        raise AssertionError("refused order must not be placed")
+
+    book = OrderBook(
+        mode=lambda: "schwab",
+        quote=lambda _symbol: {"lastPrice": "80", "lowPrice": "90", "highPrice": "110"},
+        account=lambda: ("HASH", "1"),
+        place=place,
+        equity=lambda: 10000,
+    )
+    with pytest.raises(OrderError, match="through the stop"):
+        book.quick_send({"symbol": "NVDA", "side": "buy", "risk_percent": "1"})
+    with pytest.raises(OrderError, match="through the stop"):
+        book.quick_send({"symbol": "NVDA", "side": "sell", "risk_percent": "1", "stop": "70"})
+    with pytest.raises(OrderError, match="limit price"):
+        book.quick_send({"symbol": "NVDA", "side": "buy", "order_type": "limit", "risk_percent": "1"})
+    with pytest.raises(OrderError, match="ticker"):
+        book.quick_send({"symbol": "", "risk_percent": "1"})
+    assert placed == []
+
+    def capture(account_hash, order):
+        placed.append((account_hash, order.build()))
+
+        class Response:
+            status_code = 201
+            headers = {"Location": "https://api.schwabapi.com/trader/v1/accounts/HASH/orders/55"}
+
+        return Response()
+
+    live = OrderBook(
+        mode=lambda: "schwab",
+        quote=lambda _symbol: QUICK_QUOTE,
+        account=lambda: ("HASH", "1"),
+        place=capture,
+        equity=lambda: 10000,
+    )
+    sent = live.quick_send({"symbol": "nvda", "side": "buy", "risk_percent": "1"})
+    assert sent["placed"] is True and sent["plan"]["shares"] == 9 and sent["plan"]["stop"] == 89.9
+    assert placed[0][0] == "HASH"
+    assert placed[0][1]["orderStrategyType"] == "TRIGGER"
+    assert placed[0][1]["childOrderStrategies"][0]["stopPrice"] == "89.90"
+    assert "EXTO" not in json.dumps(placed[0][1])
+
+
+def test_demo_quick_order_does_not_call_schwab():
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("demo must not call Schwab")
+
+    book = OrderBook(
+        mode=lambda: "demo",
+        quote=lambda _symbol: QUICK_QUOTE,
+        account=forbidden,
+        place=forbidden,
+        client=forbidden,
+        equity=forbidden,
+    )
+    result = book.quick_send({"symbol": "NVDA", "side": "buy", "risk_percent": "1"})
+    assert result["placed"] is False and result["mode"] == "demo"
+    assert "89.90" in result["summary"]
 
 
 def test_email_logs_when_smtp_is_unset_and_sms_is_a_placeholder(caplog, monkeypatch):

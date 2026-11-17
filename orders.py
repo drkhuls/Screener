@@ -14,6 +14,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any, Callable
 
 from alerts import dispatch_order_alert
@@ -95,14 +96,7 @@ def tif_choices(order_type: str) -> list[str]:
 
 def normalize_ticket(raw: dict[str, Any]) -> OrderTicket:
     """Validate a ticket. This never reads an account and never places an order."""
-    symbol_text = str(raw.get("symbol") if raw else "").strip()
-    if not symbol_text:
-        raise OrderError("Enter a ticker")
-    if re.search(r"\s", symbol_text) or any(ch in symbol_text for ch in ",;"):
-        raise OrderError("Enter a ticker only, not an order sentence")
-    symbol = symbol_text.upper().lstrip("$")
-    if not SYMBOL.fullmatch(symbol):
-        raise OrderError("Enter a ticker only, not an order sentence")
+    symbol = _ticker(raw.get("symbol") if raw else "")
 
     side = str(raw.get("side") or "buy").strip().lower()
     if side not in {"buy", "sell"}:
@@ -156,6 +150,231 @@ def summary(ticket: OrderTicket) -> str:
         f"Schwab session {ticket.session}, duration {ticket.duration}.{last} "
         "Send this order?"
     )
+
+
+QUICK_PERCENTS = {
+    "1": Decimal("1"),
+    "0.5": Decimal("0.5"),
+    "0.33": Decimal("0.33"),
+    "0.25": Decimal("0.25"),
+}
+STOP_OFFSET = Decimal("0.10")
+
+
+@dataclass
+class QuickOrder:
+    side: str
+    order_type: str
+    tif: str
+    shares: int
+    symbol: str
+    entry: float
+    stop: float
+    last: float
+    duration: str
+    session: str
+    risk: float
+    account_hash: str = ""
+    account_number: str = ""
+
+    def public(self) -> dict[str, Any]:
+        return {
+            "side": self.side,
+            "order_type": self.order_type,
+            "tif": self.tif,
+            "shares": self.shares,
+            "symbol": self.symbol,
+            "entry": self.entry,
+            "stop": self.stop,
+            "last": self.last,
+            "duration": self.duration,
+            "session": self.session,
+            "risk": self.risk,
+        }
+
+
+def _ticker(value: Any) -> str:
+    symbol_text = str(value or "").strip()
+    if not symbol_text:
+        raise OrderError("Enter a ticker")
+    if re.search(r"\s", symbol_text) or any(ch in symbol_text for ch in ",;"):
+        raise OrderError("Enter a ticker only, not an order sentence")
+    symbol = symbol_text.upper().lstrip("$")
+    if not SYMBOL.fullmatch(symbol):
+        raise OrderError("Enter a ticker only, not an order sentence")
+    return symbol
+
+
+def _decimal(value: Any) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        return Decimal(str(value).strip())
+    except Exception:
+        return None
+
+
+def _cents(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _quote_price(quote: dict[str, Any], key: str) -> Decimal | None:
+    if not isinstance(quote, dict):
+        return None
+    return _decimal(quote.get(key))
+
+
+def _quick_inputs(raw: dict[str, Any], quote: dict[str, Any]) -> dict[str, Any]:
+    """Side, entry, and stop from the quote. Raises before any account or place call."""
+    side = str((raw or {}).get("side") or "buy").strip().lower()
+    if side not in {"buy", "sell"}:
+        raise OrderError("Side must be buy or sell")
+    order_type = str(raw.get("order_type") or "market").strip().lower()
+    if order_type not in {"market", "limit"}:
+        raise OrderError("Order type must be market or limit")
+    tif = str(raw.get("tif") or "day").strip().lower()
+    if tif in REMOVED_TIF:
+        raise OrderError("Extended and overnight time in force are not available")
+    if tif not in {"day", "gtc"}:
+        raise OrderError("Time in force must be Day or GTC")
+    last = _quote_price(quote, "lastPrice")
+    if last is None:
+        raise OrderError("No last price for that ticker")
+    custom = _decimal(raw.get("stop"))
+    if custom is not None:
+        if custom <= 0:
+            raise OrderError("Stop must be positive")
+        stop = _cents(custom)
+    elif side == "buy":
+        low = _quote_price(quote, "lowPrice")
+        if low is None:
+            raise OrderError("No low of day for that ticker")
+        stop = _cents(low - STOP_OFFSET)
+    else:
+        high = _quote_price(quote, "highPrice")
+        if high is None:
+            raise OrderError("No high of day for that ticker")
+        stop = _cents(high + STOP_OFFSET)
+    if order_type == "limit":
+        price = _decimal(raw.get("price"))
+        if price is None:
+            raise OrderError("Enter a limit price")
+        if price <= 0:
+            raise OrderError("Price must be positive")
+        entry = _cents(price)
+    else:
+        entry = last
+    if side == "buy" and last <= stop:
+        raise OrderError("Last price is already through the stop")
+    if side == "sell" and last >= stop:
+        raise OrderError("Last price is already through the stop")
+    duration = "DAY" if tif == "day" else "GOOD_TILL_CANCEL"
+    return {
+        "side": side,
+        "order_type": order_type,
+        "tif": tif,
+        "symbol": _ticker(raw.get("symbol")),
+        "entry": entry,
+        "stop": stop,
+        "last": last,
+        "duration": duration,
+    }
+
+
+def _quick_risk(raw: dict[str, Any], equity: Any) -> Decimal:
+    """Dollar risk wins when the box has a number. Otherwise equity times the percent."""
+    dollars = _decimal(raw.get("risk_dollars"))
+    if dollars is not None:
+        if dollars <= 0:
+            raise OrderError("Risk must be positive")
+        return dollars
+    percent = raw.get("risk_percent")
+    if isinstance(percent, str):
+        percent = percent.strip().rstrip("%")
+    key = None
+    parsed = _decimal(percent) if percent not in (None, "") else None
+    if parsed is not None:
+        for name, points in QUICK_PERCENTS.items():
+            if parsed == points:
+                key = name
+                break
+        if key is None:
+            raise OrderError("Choose a risk")
+    if key is None:
+        raise OrderError("Choose a risk")
+    account = _decimal(equity)
+    if account is None or account <= 0:
+        raise OrderError("Account equity is missing")
+    return account * QUICK_PERCENTS[key] / Decimal("100")
+
+
+def quick_shares(risk: Decimal, entry: Decimal, stop: Decimal) -> int:
+    """floor(risk / abs(entry - stop)). Zero shares are refused."""
+    distance = abs(entry - stop)
+    if distance == 0:
+        raise OrderError("Share size is 0")
+    shares = int((risk / distance).to_integral_value(rounding=ROUND_FLOOR))
+    if shares < 1:
+        raise OrderError("Share size is 0")
+    return shares
+
+
+def build_quick(raw: dict[str, Any], quote: dict[str, Any], equity: Any) -> QuickOrder:
+    """Size a bracket. Does not look up an account and does not place an order."""
+    inputs = _quick_inputs(raw, quote)
+    risk = _quick_risk(raw, equity)
+    shares = quick_shares(risk, inputs["entry"], inputs["stop"])
+    return QuickOrder(
+        side=inputs["side"],
+        order_type=inputs["order_type"],
+        tif=inputs["tif"],
+        shares=shares,
+        symbol=inputs["symbol"],
+        entry=float(inputs["entry"]),
+        stop=float(inputs["stop"]),
+        last=float(inputs["last"]),
+        duration=inputs["duration"],
+        session="NORMAL",
+        risk=float(risk),
+    )
+
+
+def quick_summary(plan: QuickOrder) -> str:
+    side = "Buy" if plan.side == "buy" else "Sell"
+    kind = "market" if plan.order_type == "market" else f"limit ${plan.entry:.2f}"
+    tif = "Day" if plan.duration == "DAY" else "GTC"
+    return f"{side} {plan.shares} {plan.symbol} {kind}, stop ${plan.stop:.2f}, {tif}."
+
+
+def bracket_order(plan: QuickOrder):
+    """Entry parent plus a stop-market child. Session is NORMAL. No EXTO."""
+    from schwab.orders.common import Duration, EquityInstruction, OrderStrategyType, OrderType, Session
+    from schwab.orders.common import first_triggers_second
+    from schwab.orders.generic import OrderBuilder
+
+    duration = Duration.DAY if plan.duration == "DAY" else Duration.GOOD_TILL_CANCEL
+    parent_side = EquityInstruction.BUY if plan.side == "buy" else EquityInstruction.SELL
+    child_side = EquityInstruction.SELL if plan.side == "buy" else EquityInstruction.BUY
+    parent_type = OrderType.MARKET if plan.order_type == "market" else OrderType.LIMIT
+
+    def leg(instruction, order_type, *, price: float | None = None, stop: float | None = None):
+        builder = OrderBuilder()
+        builder.set_session(Session.NORMAL)
+        builder.set_duration(duration)
+        builder.set_order_type(order_type)
+        builder.set_order_strategy_type(OrderStrategyType.SINGLE)
+        if price is not None:
+            builder.set_price(f"{price:.2f}")
+        if stop is not None:
+            builder.set_stop_price(f"{stop:.2f}")
+        builder.add_equity_leg(instruction, plan.symbol, int(plan.shares))
+        return builder
+
+    parent = leg(parent_side, parent_type, price=plan.entry if plan.order_type == "limit" else None)
+    child = leg(child_side, OrderType.STOP, stop=plan.stop)
+    return first_triggers_second(parent, child)
 
 
 def equity_order(ticket: OrderTicket):
@@ -247,6 +466,25 @@ def read_account(client: Any) -> tuple[str, str]:
     return account_hash, account_number
 
 
+def read_equity(client: Any, account_hash: str) -> float:
+    """Account equity from the trading client. Used only to size a quick order."""
+    try:
+        response = client.get_account(account_hash)
+    except Exception as exc:
+        raise OrderError(f"Schwab accounts failed: {exc}") from exc
+    _check(response, "Schwab accounts")
+    try:
+        body = response.json()
+    except Exception as exc:
+        raise OrderError(f"Schwab accounts failed: {exc}") from exc
+    account = body.get("securitiesAccount") if isinstance(body, dict) else None
+    balances = account.get("currentBalances") if isinstance(account, dict) else None
+    equity = _decimal((balances or {}).get("equity") if isinstance(balances, dict) else None)
+    if equity is None or equity <= 0:
+        raise OrderError("Account equity is missing")
+    return float(equity)
+
+
 def order_event(order: dict[str, Any]) -> str | None:
     """``filled`` or ``rejected`` once Schwab finishes the order, else wait."""
     if not isinstance(order, dict):
@@ -268,12 +506,14 @@ class OrderBook:
         account: Callable[[], tuple[str, str]],
         place: Callable[[str, Any], Any],
         client: Callable[[], Any] | None = None,
+        equity: Callable[[], Any] | None = None,
     ):
         self.mode = mode
         self.quote = quote
         self.account = account
         self.place = place
         self.client = client or (lambda: None)
+        self.equity = equity or (lambda: (_ for _ in ()).throw(OrderError("Account equity is missing")))
         self.lock = threading.Lock()
         self.previews: dict[str, dict[str, Any]] = {}
         self.pending: list[dict[str, str]] = []
@@ -317,12 +557,18 @@ class OrderBook:
             screener.ensure_trade()
             return screener.trade_client
 
+        def equity() -> float:
+            client = trade_client()
+            account_hash, _account_number = read_account(client)
+            return read_equity(client, account_hash)
+
         return cls(
             mode=lambda: screener.mode,
             quote=quote,
             account=account,
             place=place,
             client=current_trade,
+            equity=equity,
         )
 
     def preview(self, raw: dict[str, Any]) -> dict[str, Any]:
@@ -366,6 +612,55 @@ class OrderBook:
         except OrderError:
             self._restore(preview_id, item)
             raise
+
+    def quick_send(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Place a sized bracket now. Demo mode quotes locally and does not call Schwab."""
+        symbol = _ticker((raw or {}).get("symbol"))
+        quote = self.quote(symbol)
+        inputs = _quick_inputs(raw, quote)
+        if self.mode() == "demo":
+            side = "Buy" if inputs["side"] == "buy" else "Sell"
+            message = f"Demo mode: order not sent. {side} {symbol}, stop ${float(inputs['stop']):.2f}."
+            alert = self.notify("submit", message)
+            return {"placed": False, "mode": "demo", "summary": message, "plan": None, "alert": alert}
+        plan = build_quick(raw, quote, self.equity())
+        account_hash, account_number = self.account()
+        plan.account_hash = account_hash
+        plan.account_number = account_number
+        order = bracket_order(plan)
+        try:
+            response = self.place(account_hash, order)
+        except OrderError:
+            raise
+        except Exception as exc:
+            raise OrderError(f"Schwab order failed: {exc}") from exc
+        status = getattr(response, "status_code", 0)
+        if status >= 400:
+            _check(response, "Schwab order")
+        order_id = _order_id(getattr(response, "headers", {}) or {})
+        if order_id is not None:
+            side = "Buy" if plan.side == "buy" else "Sell"
+            with self.lock:
+                self.watched.append({
+                    "order_id": order_id,
+                    "account_hash": account_hash,
+                    "done": False,
+                    "fill_message": f"Filled: {side} {plan.shares} {plan.symbol}.",
+                    "reject_message": f"Schwab rejected the {plan.symbol} order.",
+                })
+        message = "Order sent. " + quick_summary(plan)
+        if order_id is None:
+            message += " Schwab did not return an order id."
+        else:
+            message += f" Order id {order_id}."
+        return {
+            "placed": True,
+            "mode": "schwab",
+            "order_id": order_id,
+            "summary": quick_summary(plan),
+            "plan": plan.public(),
+            "alert": self.notify("submit", message),
+        }
 
     def notify(self, kind: str, message: str, *, enqueue: bool = False) -> dict[str, str]:
         dispatch_order_alert(kind, message)
