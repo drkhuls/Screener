@@ -1247,8 +1247,7 @@ $("quick-send").addEventListener("click", async () => {
       popup("error", orderErrorText(data));
       return;
     }
-    if (data.alert) popup(data.alert.kind, data.alert.message);
-    await loadOpenOrders();
+    openOrderPage(data);
   } catch (err) {
     popup("error", "Quick order failed");
   } finally {

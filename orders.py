@@ -348,6 +348,16 @@ def quick_summary(plan: QuickOrder) -> str:
     return f"{side} {plan.shares} {plan.symbol} {kind}, stop ${plan.stop:.2f}, {tif}."
 
 
+def quick_confirm(plan: QuickOrder | None, inputs: dict[str, Any]) -> str:
+    """Details for the confirm screen. Shares and stop are the numbers just calculated."""
+    if plan is not None:
+        return quick_summary(plan) + " Send this order?"
+    side = "Buy" if inputs["side"] == "buy" else "Sell"
+    kind = "market" if inputs["order_type"] == "market" else f"limit ${float(inputs['entry']):.2f}"
+    tif = "Day" if inputs["duration"] == "DAY" else "GTC"
+    return f"{side} {inputs['symbol']} {kind}, stop ${float(inputs['stop']):.2f}, {tif}. Send this order?"
+
+
 def bracket_order(plan: QuickOrder):
     """Entry parent plus a stop-market child. Session is NORMAL. No EXTO."""
     from schwab.orders.common import Duration, EquityInstruction, OrderStrategyType, OrderType, Session
@@ -596,6 +606,8 @@ class OrderBook:
             item = self.previews.pop(str(preview_id), None)
         if item is None or time.monotonic() - item["at"] > PREVIEW_TTL:
             raise OrderError("Review an order first. Nothing was sent.")
+        if item.get("quick"):
+            return self._send_quick(preview_id, item)
         ticket: OrderTicket = item["ticket"]
         if self.mode() == "demo":
             message = "Demo mode: order not sent. " + summary(ticket)
@@ -614,28 +626,67 @@ class OrderBook:
             raise
 
     def quick_send(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Place a sized bracket now. Demo mode quotes locally and does not call Schwab."""
+        """Size the bracket and open a confirm. Does not place. Demo mode does not call Schwab."""
         symbol = _ticker((raw or {}).get("symbol"))
         quote = self.quote(symbol)
         inputs = _quick_inputs(raw, quote)
         if self.mode() == "demo":
-            side = "Buy" if inputs["side"] == "buy" else "Sell"
-            message = f"Demo mode: order not sent. {side} {symbol}, stop ${float(inputs['stop']):.2f}."
-            alert = self.notify("submit", message)
-            return {"placed": False, "mode": "demo", "summary": message, "plan": None, "alert": alert}
-        plan = build_quick(raw, quote, self.equity())
-        account_hash, account_number = self.account()
+            plan = None
+        else:
+            plan = build_quick(raw, quote, self.equity())
+        summary = quick_confirm(plan, inputs)
+        preview_id = secrets.token_hex(8)
+        with self.lock:
+            self.previews[preview_id] = {"quick": True, "plan": plan, "summary": summary, "at": time.monotonic()}
+        return {
+            "preview_id": preview_id,
+            "placed": False,
+            "mode": "demo" if plan is None else "schwab",
+            "summary": summary,
+            "plan": plan.public() if plan is not None else {
+                "side": inputs["side"],
+                "order_type": inputs["order_type"],
+                "symbol": symbol,
+                "stop": float(inputs["stop"]),
+                "entry": float(inputs["entry"]),
+                "shares": None,
+                "duration": inputs["duration"],
+                "session": "NORMAL",
+            },
+        }
+
+    def _send_quick(self, preview_id: str, item: dict[str, Any]) -> dict[str, Any]:
+        """Place the bracket whose size and stop were fixed on the confirm screen."""
+        plan: QuickOrder | None = item.get("plan")
+        if self.mode() == "demo" or plan is None:
+            message = "Demo mode: order not sent. " + item["summary"]
+            return {
+                "placed": False,
+                "mode": "demo",
+                "order_id": None,
+                "summary": message,
+                "plan": None if plan is None else plan.public(),
+                "alert": self.notify("submit", message),
+            }
+        try:
+            account_hash, account_number = self.account()
+        except Exception:
+            self._restore(preview_id, item)
+            raise
         plan.account_hash = account_hash
         plan.account_number = account_number
         order = bracket_order(plan)
         try:
             response = self.place(account_hash, order)
         except OrderError:
+            self._restore(preview_id, item)
             raise
         except Exception as exc:
+            self._restore(preview_id, item)
             raise OrderError(f"Schwab order failed: {exc}") from exc
         status = getattr(response, "status_code", 0)
         if status >= 400:
+            self._restore(preview_id, item)
             _check(response, "Schwab order")
         order_id = _order_id(getattr(response, "headers", {}) or {})
         if order_id is not None:

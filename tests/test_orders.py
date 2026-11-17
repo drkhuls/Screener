@@ -398,8 +398,21 @@ def test_quick_send_refuses_when_last_is_through_the_stop_and_places_nothing():
         place=capture,
         equity=lambda: 10000,
     )
-    sent = live.quick_send({"symbol": "nvda", "side": "buy", "risk_percent": "1"})
-    assert sent["placed"] is True and sent["plan"]["shares"] == 9 and sent["plan"]["stop"] == 89.9
+    reads = {"equity": 0}
+
+    def equity():
+        reads["equity"] += 1
+        return 10000 if reads["equity"] == 1 else 1
+
+    live.equity = equity
+    preview = live.quick_send({"symbol": "nvda", "side": "buy", "risk_percent": "1"})
+    assert preview["placed"] is False
+    assert preview["plan"]["shares"] == 9 and preview["plan"]["stop"] == 89.9
+    assert "9 NVDA" in preview["summary"] and "89.90" in preview["summary"]
+    assert placed == []
+    sent = live.send(preview["preview_id"])
+    assert sent["placed"] is True and sent["plan"]["shares"] == 9
+    assert reads["equity"] == 1
     assert placed[0][0] == "HASH"
     assert placed[0][1]["orderStrategyType"] == "TRIGGER"
     assert placed[0][1]["childOrderStrategies"][0]["stopPrice"] == "89.90"
@@ -420,7 +433,9 @@ def test_demo_quick_order_does_not_call_schwab():
     )
     result = book.quick_send({"symbol": "NVDA", "side": "buy", "risk_percent": "1"})
     assert result["placed"] is False and result["mode"] == "demo"
-    assert "89.90" in result["summary"]
+    assert "89.90" in result["summary"] and result["plan"]["stop"] == 89.9
+    confirmed = book.send(result["preview_id"])
+    assert confirmed["placed"] is False and "not sent" in confirmed["summary"]
 
 
 def test_email_logs_when_smtp_is_unset_and_sms_is_a_placeholder(caplog, monkeypatch):

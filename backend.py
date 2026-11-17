@@ -505,7 +505,7 @@ def send_order(body: SendRequest) -> dict[str, Any]:
 
 @app.post("/api/orders/quick")
 def quick_order(body: QuickRequest) -> dict[str, Any]:
-    """Size and place a bracket. Demo mode does not call Schwab."""
+    """Size a bracket for the confirm screen. Does not place. Demo mode does not call Schwab."""
     return _order_call(screener.orders.quick_send, body.model_dump())
 
 
