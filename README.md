@@ -61,6 +61,10 @@ sudo systemctl restart screener
 
 The market-data refresh token expires 7 days after `login`. The banner reads that quote token only. Run `python backend.py login` again when it appears. The trading token expires on its own clock; run `login-trade` again for that one.
 
+Every `/api/` route, including order send, requires the header `X-Screener-Secret` to match `SCREENER_API_SECRET`. Generate it with `openssl rand -hex 32` and put that line in `/root/Screener/.env`. The systemd unit named `screener` loads that file; restart with `sudo systemctl restart screener`. Live mode with no secret refuses every `/api/` call. Demo mode with no secret stays open. The page at `/` is not checked. The browser asks once and keeps the value in localStorage. A 401 clears it and asks again; cancelling the prompt does not ask on every poll.
+
+The VPS answers on plain HTTP, so the header is not safe in transit by itself. Firewall port 8000 to your IP, use Tailscale, or serve HTTPS.
+
 ## Tickers
 
 Edit `universe.json`. Groups are labels shown next to each ticker; the screener uses one flat list with duplicates removed. You can also put symbols in `"tickers"`, or replace the whole file with a plain JSON list. The server picks up changes within 5 seconds and loads history for new tickers. Quotes are requested in chunks of `quote_chunk_size` (100), so lists over 100 work.

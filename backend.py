@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 import metrics
@@ -390,6 +391,31 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Screener", lifespan=lifespan)
+
+
+def _api_secret() -> str:
+    return os.environ.get("SCREENER_API_SECRET", "").strip()
+
+
+def _api_mode() -> str:
+    if screener is not None:
+        return screener.mode
+    return resolve_mode()
+
+
+@app.middleware("http")
+async def require_api_secret(request, call_next):
+    """Every /api/ route needs X-Screener-Secret. Live mode with no secret fails closed."""
+    path = request.url.path
+    if path.startswith("/api/"):
+        secret = _api_secret()
+        header = request.headers.get("x-screener-secret", "")
+        if not secret:
+            if _api_mode() != "demo":
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        elif not hmac.compare_digest(header, secret):
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 @app.get("/")

@@ -301,6 +301,58 @@
 <div id="toasts"></div>
 <script>
 const POLL_MS = 5000;
+const API_SECRET_KEY = "screener.apiSecret";
+let apiSecretDeclined = false;
+
+function readApiSecret() {
+  try { return localStorage.getItem(API_SECRET_KEY) || ""; }
+  catch (err) { return ""; }
+}
+
+function clearApiSecret() {
+  try { localStorage.removeItem(API_SECRET_KEY); }
+  catch (err) { /* storage can be blocked */ }
+}
+
+function askApiSecret() {
+  const saved = readApiSecret();
+  if (saved) return saved;
+  if (apiSecretDeclined) return "";
+  const value = window.prompt("Screener API secret");
+  if (value == null || !String(value).trim()) {
+    apiSecretDeclined = true;
+    clearApiSecret();
+    return "";
+  }
+  const secret = String(value).trim();
+  try { localStorage.setItem(API_SECRET_KEY, secret); }
+  catch (err) { /* send it for this page anyway */ }
+  apiSecretDeclined = false;
+  return secret;
+}
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async function (input, init) {
+  const url = typeof input === "string" ? input : (input && input.url) || "";
+  if (url.indexOf("/api/") === -1) return nativeFetch(input, init);
+  const headers = new Headers((init && init.headers) || undefined);
+  let secret = askApiSecret();
+  if (secret) headers.set("X-Screener-Secret", secret);
+  const res = await nativeFetch(input, Object.assign({}, init, { headers }));
+  if (res.status !== 401) return res;
+  clearApiSecret();
+  if (apiSecretDeclined) return res;
+  secret = askApiSecret();
+  if (!secret) return res;
+  headers.set("X-Screener-Secret", secret);
+  const retry = await nativeFetch(input, Object.assign({}, init, { headers }));
+  if (retry.status === 401) {
+    clearApiSecret();
+    apiSecretDeclined = true;
+  }
+  return retry;
+};
+
 const PAGE_SIZE = 20;
 const SCANS = [
   ["universe_count", "my universe", true],
